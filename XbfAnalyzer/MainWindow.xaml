@@ -1,8 +1,11 @@
 ﻿<Window x:Class="XbfAnalyzer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="MainWindow" Height="350" Width="525">
+        Title="XBF Analyzer" Height="700" Width="1000"
+        PreviewDragOver="Window_PreviewDragOver"
+        Drop="Window_Drop"
+        >
     <Grid>
-        
+        <TextBox x:Name="OutputTextBox" FontFamily="Consolas" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" IsReadOnly="True" />
     </Grid>
 </Window>

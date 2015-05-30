@@ -24,5 +24,52 @@ namespace XbfAnalyzer
         {
             InitializeComponent();
         }
+
+        private void Window_PreviewDragOver(object sender, DragEventArgs e)
+        {
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+        }
+
+        private void Window_Drop(object sender, DragEventArgs e)
+        {
+            string[] droppedItems = e.Data.GetData(DataFormats.FileDrop) as string[];
+            if (droppedItems == null || droppedItems.Length < 1)
+                return;
+        }
+
+        #region Message Logging
+
+        private void ClearLog()
+        {
+            OutputTextBox.Text = null;
+        }
+
+        private void LogMessage(string message = "")
+        {
+            OutputTextBox.Text += message + Environment.NewLine;
+        }
+
+        private void LogMessage(string format, params object[] args)
+        {
+            LogMessage(string.Format(format, args));
+        }
+
+        private void LogLine()
+        {
+            LogMessage(new string('-', 80));
+        }
+
+        private void LogBoldLine()
+        {
+            LogMessage(new string('=', 80));
+        }
+
+        private void LogHexAddressMessage(int address, string message)
+        {
+            LogMessage("{0:X4}: {1}", address, message);
+        }
+
+        #endregion
     }
 }
