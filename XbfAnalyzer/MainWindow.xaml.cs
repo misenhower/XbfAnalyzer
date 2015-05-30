@@ -121,6 +121,24 @@ namespace XbfAnalyzer
                 for (int i = 0; i < xbf.XmlNamespaceTable.Length; i++)
                     LogHexAddressMessage(i, xbf.XmlNamespaceTable[i]);
                 LogMessage();
+
+                // Nodes
+                LogLine();
+                if (xbf.Header.MajorFileVersion < 2)
+                {
+                    LogMessage("Parsing XBF v1 nodes is not currently supported.");
+                }
+                else
+                {
+                    LogMessage("XBF nodes:");
+                    if (!string.IsNullOrEmpty(xbf.NodeParserError))
+                    {
+                        LogMessage(xbf.NodeParserError);
+                        LogMessage();
+                        LogMessage("Partial node results:");
+                    }
+                    LogMessage(xbf.NodeResultString);
+                }
             }
             catch (Exception ex)
             {

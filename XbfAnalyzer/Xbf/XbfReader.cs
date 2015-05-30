@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Media;
 
 namespace XbfAnalyzer.Xbf
 {
@@ -21,6 +22,9 @@ namespace XbfAnalyzer.Xbf
                 TypeTable = ReadTable(reader, r => new XbfType(this, r));
                 PropertyTable = ReadTable(reader, r => new XbfProperty(this, r));
                 XmlNamespaceTable = ReadTable(reader, r => StringTable[r.ReadInt32()]);
+
+                if (Header.MajorFileVersion >= 2)
+                    ReadNodesV2(reader);
             }
         }
 
@@ -31,6 +35,9 @@ namespace XbfAnalyzer.Xbf
         public XbfType[] TypeTable { get; private set; }
         public XbfProperty[] PropertyTable { get; private set; }
         public string[] XmlNamespaceTable { get; private set; }
+
+        public string NodeResultString { get; private set; }
+        public string NodeParserError { get; private set; }
 
         private string ReadString(BinaryReader reader)
         {
@@ -66,6 +73,186 @@ namespace XbfAnalyzer.Xbf
                 result[i] = objectGenerator(reader);
 
             return result;
+        }
+
+        // XBF v2 node parser functionality is mostly based on analysis of XBF v2.1 files. There are probably a lot of mistakes here!
+        private void ReadNodesV2(BinaryReader reader)
+        {
+            // There are 8 bytes at the beginning -- not sure what these are for.
+            // Typical value: 0x0100000000000000;
+            reader.ReadBytes(8);
+
+            // Next we have the length of the nodes section. After that is line/position data.
+            int nodeLength = reader.ReadInt32();
+            int endPosition = (int)reader.BaseStream.Position + nodeLength;
+
+            XbfObject rootObject = new XbfObject();
+            Stack<XbfObject> objectStack = new Stack<XbfObject>();
+            objectStack.Push(rootObject);
+            Dictionary<string, string> namespaces = new Dictionary<string, string>();
+
+            try
+            {
+                // Read the node bytes
+                while (reader.BaseStream.Position < endPosition)
+                {
+                    switch (reader.ReadByte())
+                    {
+                        case 0x12: // This usually appears to be the first byte encountered. I'm not sure what the difference between 0x12 and 0x03 is.
+                        case 0x03: // Root node namespace declaration
+                            {
+                                string name = XmlNamespaceTable[reader.ReadUInt16()];
+                                string prefix = ReadString(reader);
+                                namespaces[prefix] = name;
+                            }
+                            break;
+
+                        case 0x0B: // Indicates the class of the root object (i.e., x:Class)
+                            {
+                                rootObject.Properties.Add(new XbfObjectProperty("x:Class", ReadString(reader)));
+                            }
+                            break;
+
+                        case 0x17: // Root object begin
+                            {
+                                rootObject.TypeName = GetTypeNameV2(reader.ReadUInt16());
+                            }
+                            break;
+
+                        case 0x14: // Normal object begin
+                            {
+                                XbfObject obj = new XbfObject();
+                                obj.TypeName = GetTypeNameV2(reader.ReadUInt16());
+                                objectStack.Push(obj);
+                            }
+                            break;
+
+                        case 0x13: // Increasing depth?
+                            {
+                                // This seems to happen when increasing depth (i.e., descending into the children of an object).
+                                // Not sure what we need to do here.
+
+                                reader.ReadUInt16();
+                            }
+                            break;
+
+                        case 0x21: // End object
+                            {
+                                // This should be followed by 0x08, 0x07, or 0x20, but these may not be present at the end of the node stream.
+                                // I'm not sure if we need to do anything here
+                            }
+                            break;
+
+                        case 0x08: // Add the last object to the children of the previous object
+                            {
+                                var obj = objectStack.Pop();
+                                objectStack.Peek().Children.Add(obj);
+                            }
+                            break;
+
+                        case 0x07: // Add the last object as a property of the previous object
+                        case 0x20: // Same as 0x07, but this seems to occur when the object is a {Binding} value
+                            {
+                                var obj = objectStack.Pop();
+                                string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                                objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, obj));
+                            }
+                            break;
+
+                        case 0x02: // This seems to happen at the end of a list of children. (Decreasing depth?)
+                            break;
+
+                        case 0x1A: // An object property
+                        case 0x1B: // An object property (not sure what the difference from 0x1A is)
+                            {
+                                string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                                object propertyValue = GetPropertyValueV2(reader);
+                                objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
+                            }
+                            break;
+
+                        case 0x0C: // x:Name
+                            {
+                                // Not sure what the first 6 bytes are for
+                                reader.ReadBytes(6);
+
+                                string name = GetPropertyValueV2(reader).ToString();
+                                objectStack.Peek().Name = name;
+                            }
+                            break;
+
+                        case 0x0E: // x:Uid
+                            {
+                                object value = GetPropertyValueV2(reader);
+                                objectStack.Peek().Uid = value.ToString();
+                            }
+                            break;
+
+                        default:
+                            throw new Exception("Unrecognized character in node stream");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                NodeParserError = string.Format("Error parsing node stream at file position {0} (0x{0:X})" + Environment.NewLine, reader.BaseStream.Position - 1) + e.ToString();
+            }
+
+            if (rootObject != null)
+                NodeResultString = rootObject.ToString();
+        }
+
+        private string GetTypeNameV2(int id)
+        {
+            if (id < TypeTable.Length)
+                return TypeTable[id].Name;
+            return XbfFrameworkTypes.GetNameForID(id) ?? string.Format("UnknownType0x{0:X4}", id);
+        }
+
+        private string GetPropertyNameV2(int id)
+        {
+            if (id < PropertyTable.Length)
+                return PropertyTable[id].Name;
+            return XbfFrameworkTypes.GetNameForID(id) ?? string.Format("UnknownProperty0x{0:X4}", id);
+        }
+
+        private string GetEnumerationValueV2(int enumID, int enumValue)
+        {
+            // TODO
+            return string.Format("Enum(0x{0:X4})Value({1})", enumID, enumValue);
+        }
+
+        private object GetPropertyValueV2(BinaryReader reader)
+        {
+            switch (reader.ReadByte())
+            {
+                case 0x01: // bool value false
+                    return false;
+
+                case 0x02: // bool value true
+                    return true;
+
+                case 0x03: // float
+                    return reader.ReadSingle();
+
+                case 0x05: // string
+                    return StringTable[reader.ReadUInt16()];
+
+                case 0x08: // Color (or Brush?)
+                    byte b = reader.ReadByte();
+                    byte g = reader.ReadByte();
+                    byte r = reader.ReadByte();
+                    byte a = reader.ReadByte();
+                    return Color.FromArgb(a, r, g, b);
+
+                case 0x0B: // Enumeration
+                    int enumID = reader.ReadUInt16();
+                    int enumValue = reader.ReadInt32();
+                    return GetEnumerationValueV2(enumID, enumValue);
+
+                default:
+                    throw new Exception();
+            }
         }
     }
 }
