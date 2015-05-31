@@ -174,6 +174,24 @@ namespace XbfAnalyzer.Xbf
                             }
                             break;
 
+                        case 0x1E: // StaticResource
+                            {
+                                string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                                object propertyValue = GetPropertyValueV2(reader);
+                                propertyValue = string.Format("{{StaticResource {0}}}", propertyValue);
+                                objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
+                            }
+                            break;
+
+                        case 0x24: // ThemeResource
+                            {
+                                string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                                object propertyValue = GetPropertyValueV2(reader);
+                                propertyValue = string.Format("{{ThemeResource {0}}}", propertyValue);
+                                objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
+                            }
+                            break;
+
                         case 0x0C: // Indicates the object needs to be connected to something (e.g., a named variable, an event handler, etc.)
                             {
                                 // This byte (0x0C) indicates the current object needs to be connected to something in the generated Connect method.
