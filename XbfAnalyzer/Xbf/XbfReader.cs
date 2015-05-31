@@ -84,7 +84,8 @@ namespace XbfAnalyzer.Xbf
 
             // Next we have the length of the nodes section. After that is line/position data.
             int nodeLength = reader.ReadInt32();
-            int endPosition = (int)reader.BaseStream.Position + nodeLength;
+            int startPosition = (int)reader.BaseStream.Position;
+            int endPosition = startPosition + nodeLength;
 
             XbfObject rootObject = new XbfObject();
             Stack<XbfObject> objectStack = new Stack<XbfObject>();
@@ -94,9 +95,11 @@ namespace XbfAnalyzer.Xbf
             try
             {
                 // Read the node bytes
+                byte controlByte;
                 while (reader.BaseStream.Position < endPosition)
                 {
-                    switch (reader.ReadByte())
+                    controlByte = reader.ReadByte();
+                    switch (controlByte)
                     {
                         case 0x12: // This usually appears to be the first byte encountered. I'm not sure what the difference between 0x12 and 0x03 is.
                         case 0x03: // Root node namespace declaration
@@ -201,13 +204,13 @@ namespace XbfAnalyzer.Xbf
                             break;
 
                         default:
-                            throw new Exception("Unrecognized character in node stream");
+                            throw new Exception(string.Format("Unrecognized character 0x{0:X2} in node stream", controlByte));
                     }
                 }
             }
             catch (Exception e)
             {
-                NodeParserError = string.Format("Error parsing node stream at file position {0} (0x{0:X})" + Environment.NewLine, reader.BaseStream.Position - 1) + e.ToString();
+                NodeParserError = string.Format("Error parsing node stream at file position {0} (0x{0:X}) (node start position was: {1} (0x{1:X}))" + Environment.NewLine, reader.BaseStream.Position - 1, startPosition) + e.ToString();
             }
 
             if (rootObject != null)
