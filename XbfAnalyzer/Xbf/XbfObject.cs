@@ -11,6 +11,7 @@ namespace XbfAnalyzer.Xbf
         public string TypeName { get; set; }
         public string Name { get; set; }
         public string Uid { get; set; }
+        public int ConnectionID { get; set; }
 
         private readonly List<XbfObjectProperty> _properties = new List<XbfObjectProperty>();
         public List<XbfObjectProperty> Properties { get { return _properties; } }

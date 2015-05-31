@@ -171,11 +171,23 @@ namespace XbfAnalyzer.Xbf
                             }
                             break;
 
-                        case 0x0C: // x:Name
+                        case 0x0C: // Indicates the object needs to be connected to something (e.g., a named variable, an event handler, etc.)
                             {
-                                // Not sure what the first 6 bytes are for
-                                reader.ReadBytes(6);
+                                // This byte (0x0C) indicates the current object needs to be connected to something in the generated Connect method.
+                                // This can include event handlers, named objects (to be accessed via instance variables), etc.
+                                // Event handlers aren't explicitly included as part of the XBF node stream since they're wired up in (generated) code.
+                                // Each object that needs to be connected to something has a unique ID indicated in this section.
+                                // Example bytes: 0C 04 01 00 00 00
 
+                                // I've only seen 0x04 as the first byte value -- this may be a byte count?
+                                reader.ReadByte();
+                                // Connection ID
+                                objectStack.Peek().ConnectionID = reader.ReadInt32();
+                            }
+                            break;
+
+                        case 0x0D: // x:Name
+                            {
                                 string name = GetPropertyValueV2(reader).ToString();
                                 objectStack.Peek().Name = name;
                             }
