@@ -271,6 +271,17 @@ namespace XbfAnalyzer.Xbf
                 case 0x05: // string
                     return StringTable[reader.ReadUInt16()];
 
+                case 0x07: // GridLength
+                    int gridLengthType = reader.ReadInt32();
+                    float gridLengthValue = reader.ReadSingle();
+                    switch (gridLengthType)
+                    {
+                        case 0: return "Auto";
+                        case 1: return gridLengthValue;
+                        case 2: return (gridLengthValue == 1) ? "*" : gridLengthValue + "*";
+                        default: throw new Exception();
+                    }
+
                 case 0x08: // Color (or Brush?)
                     byte b = reader.ReadByte();
                     byte g = reader.ReadByte();
