@@ -17,7 +17,6 @@ namespace XbfAnalyzer.Xbf
         public List<XbfObjectProperty> Properties { get { return _properties; } }
 
         private readonly List<XbfObject> _children = new List<XbfObject>();
-        public List<XbfObject> Children { get { return _children; } }
 
         public override string ToString()
         {
@@ -41,14 +40,14 @@ namespace XbfAnalyzer.Xbf
             if (Uid != null)
                 sb.AppendFormat(" x:Uid=\"{0}\"", Uid);
             // Simple properties (to be displayed in-line)
-            foreach (var property in Properties.Where(p => !(p.Value is XbfObject)))
+            foreach (var property in Properties.Where(p => !(p.Value is XbfObject || p.Value is List<XbfObject>)))
                 sb.AppendFormat(" {0}=\"{1}\"", property.Name, property.Value);
 
             // Get complex properties (to be displayed inside the object body
-            var complexProperties = Properties.Where(p => p.Value is XbfObject).ToArray();
+            var complexProperties = Properties.Where(p => p.Value is XbfObject || p.Value is List<XbfObject>).ToArray();
 
             // If we don't have any complex properties or children, just close the object and return it
-            if (complexProperties.Length == 0 && Children.Count == 0)
+            if (complexProperties.Length == 0)
             {
                 sb.Append(" />");
                 return sb.ToString();
@@ -64,16 +63,19 @@ namespace XbfAnalyzer.Xbf
                 sb.AppendFormat(indent + _indent + "<{0}>", propertyName);
                 sb.AppendLine();
 
-                sb.AppendLine(((XbfObject)property.Value).ToString(indentLevel + 2));
+                if (property.Value is XbfObject)
+                {
+                    sb.AppendLine(((XbfObject)property.Value).ToString(indentLevel + 2));
+                }
+                else
+                {
+                    foreach (var obj in (List<XbfObject>)property.Value)
+                        sb.AppendLine(obj.ToString(indentLevel + 2));
+                }
+
 
                 sb.AppendFormat(indent + _indent + "</{0}>", propertyName);
                 sb.AppendLine();
-            }
-
-            // Children
-            foreach (var child in Children)
-            {
-                sb.AppendLine(child.ToString(indentLevel + 1));
             }
 
             // Element closing

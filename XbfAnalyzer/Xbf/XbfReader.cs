@@ -130,12 +130,10 @@ namespace XbfAnalyzer.Xbf
                             }
                             break;
 
-                        case 0x13: // Increasing depth?
+                        case 0x13: // Object collection begin
                             {
-                                // This seems to happen when increasing depth (i.e., descending into the children of an object).
-                                // Not sure what we need to do here.
-
-                                reader.ReadUInt16();
+                                string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                                objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, new List<XbfObject>()));
                             }
                             break;
 
@@ -146,10 +144,11 @@ namespace XbfAnalyzer.Xbf
                             }
                             break;
 
-                        case 0x08: // Add the last object to the children of the previous object
+                        case 0x08: // Add the last object to the children of the previous object (should be a collection started by 0x13)
                             {
                                 var obj = objectStack.Pop();
-                                objectStack.Peek().Children.Add(obj);
+                                var collection = (List<XbfObject>)objectStack.Peek().Properties.Last().Value;
+                                collection.Add(obj);
                             }
                             break;
 

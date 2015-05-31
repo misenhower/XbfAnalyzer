@@ -45,6 +45,10 @@ namespace XbfAnalyzer.Xbf
                 case 0x80E3: return "Height"; // RowDefinition
                 case 0x80E4: return "MaxHeight"; // RowDefinition
                 case 0x80E5: return "MinHeight"; // RowDefinition
+                case 0x835A: return "ColumnDefinitions";
+                case 0x835D: return "RowDefinitions";
+                case 0x8288: return "Children"; // Grid
+                case 0x83E7: return "Content"; // UserControl
 
                 // Unknown
                 default: return null;
