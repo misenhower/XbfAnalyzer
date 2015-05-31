@@ -40,13 +40,25 @@ namespace XbfAnalyzer.Xbf
             // Uid
             if (Uid != null)
                 sb.AppendFormat(" x:Uid=\"{0}\"", Uid);
-            // Simple properties
+            // Simple properties (to be displayed in-line)
             foreach (var property in Properties.Where(p => !(p.Value is XbfObject)))
                 sb.AppendFormat(" {0}=\"{1}\"", property.Name, property.Value);
+
+            // Get complex properties (to be displayed inside the object body
+            var complexProperties = Properties.Where(p => p.Value is XbfObject).ToArray();
+
+            // If we don't have any complex properties or children, just close the object and return it
+            if (complexProperties.Length == 0 && Children.Count == 0)
+            {
+                sb.Append(" />");
+                return sb.ToString();
+            }
+
+            // Go into object body
             sb.AppendLine(">");
 
             // Complex properties
-            foreach (var property in Properties.Where(p => p.Value is XbfObject))
+            foreach (var property in complexProperties)
             {
                 var propertyName = TypeName + "." + property.Name;
                 sb.AppendFormat(indent + _indent + "<{0}>", propertyName);
