@@ -54,6 +54,7 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="Xbf\BinaryReaderEx.cs" />
     <Compile Include="Xbf\XbfAssembly.cs" />
     <Compile Include="Xbf\XbfFrameworkTypes.cs" />
     <Compile Include="Xbf\XbfHeader.cs" />

@@ -49,6 +49,7 @@ namespace XbfAnalyzer.Xbf
                 case 0x835D: return "RowDefinitions";
                 case 0x8288: return "Children"; // Grid
                 case 0x83E7: return "Content"; // UserControl
+                case 0x8146: return "VisualStateManager.VisualStateGroups";
 
                 // Unknown
                 default: return null;

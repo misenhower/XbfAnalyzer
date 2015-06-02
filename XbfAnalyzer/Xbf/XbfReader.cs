@@ -13,7 +13,7 @@ namespace XbfAnalyzer.Xbf
         public XbfReader(string path)
         {
             using (var fileStream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            using (var reader = new BinaryReader(fileStream, Encoding.Unicode))
+            using (var reader = new BinaryReaderEx(fileStream, Encoding.Unicode))
             {
                 Header = new XbfHeader(reader);
                 ReadStringTable(reader);
@@ -76,14 +76,24 @@ namespace XbfAnalyzer.Xbf
         }
 
         // XBF v2 node parser functionality is mostly based on analysis of XBF v2.1 files. There are probably a lot of mistakes here!
-        private void ReadNodesV2(BinaryReader reader)
+        private void ReadNodesV2(BinaryReaderEx reader)
         {
-            // There are 8 bytes at the beginning -- not sure what these are for.
-            // Typical value: 0x0100000000000000;
-            reader.ReadBytes(8);
+            // I'm not sure what this mode(?) value is for, but if it equals 2 there will be two additional integers after the length value and before the nodes begin.
+            int mode = reader.ReadInt32();
 
-            // Next we have the length of the nodes section. After that is line/position data.
+            // Not sure what the next four bytes are -- typical value is 00000000
+            reader.ReadInt32();
+
+            // Next we have the length of the node section. Everything after the nodes is line/position data.
             int nodeLength = reader.ReadInt32();
+
+            // If mode is two, we have two additional ints here -- probably more byte length/position data?
+            if (mode == 2)
+            {
+                reader.ReadInt32();
+                reader.ReadInt32();
+            }
+
             int startPosition = (int)reader.BaseStream.Position;
             int endPosition = startPosition + nodeLength;
 
@@ -217,6 +227,82 @@ namespace XbfAnalyzer.Xbf
                             {
                                 object value = GetPropertyValueV2(reader);
                                 objectStack.Peek().Uid = value.ToString();
+                            }
+                            break;
+
+                        case 0x0F: // VisualStateGroups
+                            {
+                                reader.ReadBytes(4); // TODO
+
+                                // Number of visual states
+                                int visualStateCount = reader.Read7BitEncodedInt();
+                                // The following bytes indicate which visual states belong in each group
+                                int[] visualStateGroupMemberships = new int[visualStateCount];
+                                for (int i = 0; i < visualStateCount; i++)
+                                    visualStateGroupMemberships[i] = reader.Read7BitEncodedInt();
+
+                                // Number of visual states (again?)
+                                int visualStateCount2 = reader.Read7BitEncodedInt();
+                                if (visualStateCount != visualStateCount2)
+                                    throw new Exception("Visual state counts did not match"); // TODO: What does it mean when this happens? Will it ever happen?
+
+                                // Get the VisualState objects
+                                var visualStates = new XbfObject[visualStateCount2];
+                                for (int i = 0; i < visualStateCount2; i++)
+                                {
+                                    int nameID = reader.ReadUInt16();
+                                    reader.ReadBytes(7); // TODO
+
+                                    var obj = new XbfObject();
+                                    obj.TypeName = "VisualState";
+                                    obj.Name = StringTable[nameID];
+
+                                    visualStates[i] = obj;
+                                }
+
+                                // Number of VisualStateGroups
+                                int visualStateGroupCount = reader.Read7BitEncodedInt();
+
+                                // Get the VisualStateGroup objects
+                                var visualStateGroups = new XbfObject[visualStateGroupCount];
+                                for (int i = 0; i < visualStateGroupCount; i++)
+                                {
+                                    int nameID = reader.ReadUInt16();
+                                    reader.ReadByte(); // TODO
+                                    reader.Read7BitEncodedInt(); // TODO
+
+                                    var obj = new XbfObject();
+                                    obj.TypeName = "VisualStateGroup";
+                                    obj.Name = StringTable[nameID];
+
+                                    // Get the visual states that belong to this group
+                                    var states = new List<XbfObject>();
+                                    for (int j = 0; j < visualStateGroupMemberships.Length; j++)
+                                    {
+                                        if (visualStateGroupMemberships[j] == i)
+                                            states.Add(visualStates[j]);
+                                    }
+                                    if (states.Count > 0)
+                                        obj.Properties.Add(new XbfObjectProperty("States", states));
+
+                                    visualStateGroups[i] = obj;
+                                }
+
+                                reader.ReadBytes(5); // TODO
+
+                                // At the end we have a list of string references
+                                int stringCount = reader.Read7BitEncodedInt();
+                                for (int i = 0; i < stringCount; i++)
+                                {
+                                    int nameID = reader.ReadUInt16(); // TODO
+                                    System.Diagnostics.Debug.Print("Found string \"{0}\"", StringTable[nameID]);
+                                }
+
+                                // Now add all the VisualStateGroups to the last object's current collection
+                                // (This is a bit messy, it should probably happen in the handler of control code 0x02)
+                                var collection = (List<XbfObject>)objectStack.Peek().Properties.Last().Value;
+                                for (int i = 0; i < visualStateGroups.Length; i++)
+                                    collection.Add(visualStateGroups[i]);
                             }
                             break;
 
