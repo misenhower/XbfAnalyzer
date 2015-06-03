@@ -78,24 +78,33 @@ namespace XbfAnalyzer.Xbf
         // XBF v2 node parser functionality is mostly based on analysis of XBF v2.1 files. There are probably a lot of mistakes here!
         private void ReadNodesV2(BinaryReaderEx reader)
         {
-            // I'm not sure what this mode(?) value is for, but if it equals 2 there will be two additional integers after the length value and before the nodes begin.
+            // Get the stream mode(?)
+            // In a simple XBF file, this value is set to 1. When VisualStateGroups are present, it will be set to 2.
+            // When this value is set to 2, there will be two additional offset values specified at the beginning of the stream.
             int mode = reader.ReadInt32();
 
             // Not sure what the next four bytes are -- typical value is 00000000
+            // This could be an offset value for the primary node stream.
             reader.ReadInt32();
 
-            // Next we have the length of the node section. Everything after the nodes is line/position data.
-            int nodeLength = reader.ReadInt32();
+            // Stream offset for the line/column position data
+            // The referenced section contains information about the line/column positions of nodes in the source XAML file.
+            int positionDataOffset = reader.ReadInt32();
 
-            // If mode is two, we have two additional ints here -- probably more byte length/position data?
+            // While the main part of the node stream will contain some (optimized?) visual state information, the fully-expanded
+            // XAML objects (VisualStateGroups, VisualStates, etc.) will only appear in a separate section near the end.
+            int visualStateNodeDataOffset = -1;
+            int visualStatePositionDataOffset = -1;
+
+            // If mode == 2, the visual state data offsets will follow.
             if (mode == 2)
             {
-                reader.ReadInt32();
-                reader.ReadInt32();
+                visualStateNodeDataOffset = reader.ReadInt32();
+                visualStatePositionDataOffset = reader.ReadInt32();
             }
-
+            
             int startPosition = (int)reader.BaseStream.Position;
-            int endPosition = startPosition + nodeLength;
+            int endPosition = startPosition + positionDataOffset;
 
             XbfObject rootObject = new XbfObject();
             Stack<XbfObject> objectStack = new Stack<XbfObject>();
