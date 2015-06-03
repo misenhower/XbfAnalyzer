@@ -351,7 +351,8 @@ namespace XbfAnalyzer.Xbf
 
         private object GetPropertyValueV2(BinaryReader reader)
         {
-            switch (reader.ReadByte())
+            byte valueType = reader.ReadByte();
+            switch (valueType)
             {
                 case 0x01: // bool value false
                     return false;
@@ -361,6 +362,9 @@ namespace XbfAnalyzer.Xbf
 
                 case 0x03: // float
                     return reader.ReadSingle();
+
+                case 0x04: // int
+                    return reader.ReadInt32();
 
                 case 0x05: // string
                     return StringTable[reader.ReadUInt16()];
@@ -403,13 +407,16 @@ namespace XbfAnalyzer.Xbf
                     byte a = reader.ReadByte();
                     return Color.FromArgb(a, r, g, b);
 
+                case 0x09: // Duration (as an in-line string)
+                    return ReadString(reader);
+
                 case 0x0B: // Enumeration
                     int enumID = reader.ReadUInt16();
                     int enumValue = reader.ReadInt32();
                     return GetEnumerationValueV2(enumID, enumValue);
 
                 default:
-                    throw new Exception();
+                    throw new Exception(string.Format("Unrecognized value type 0x{0:X2}", valueType));
             }
         }
     }
