@@ -102,7 +102,7 @@ namespace XbfAnalyzer.Xbf
                 visualStateNodeDataOffset = reader.ReadInt32();
                 visualStatePositionDataOffset = reader.ReadInt32();
             }
-            
+
             int startPosition = (int)reader.BaseStream.Position;
             int endPosition = startPosition + positionDataOffset;
 
@@ -364,6 +364,26 @@ namespace XbfAnalyzer.Xbf
 
                 case 0x05: // string
                     return StringTable[reader.ReadUInt16()];
+
+                case 0x06: // Thickness
+                    float left = reader.ReadSingle();
+                    float top = reader.ReadSingle();
+                    float right = reader.ReadSingle();
+                    float bottom = reader.ReadSingle();
+
+                    // Attempt to combine values
+                    if (left == right && top == bottom)
+                    {
+                        // If all values are equal, just return one value
+                        if (left == top)
+                            return left;
+
+                        // If the left/right and top/bottom values are equal, return a simple "x,y" string
+                        return string.Format("{0},{1}", left, top);
+                    }
+
+                    // Otherwise, just return all values as a string
+                    return string.Format("{0},{1},{2},{3}", left, top, right, bottom);
 
                 case 0x07: // GridLength
                     int gridLengthType = reader.ReadInt32();

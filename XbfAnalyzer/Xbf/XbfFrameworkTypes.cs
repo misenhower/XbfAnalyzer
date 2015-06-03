@@ -50,6 +50,9 @@ namespace XbfAnalyzer.Xbf
                 case 0x8288: return "Children"; // Grid
                 case 0x83E7: return "Content"; // UserControl
                 case 0x8146: return "VisualStateManager.VisualStateGroups";
+                case 0x818D: return "Margin"; // FrameworkElement
+                case 0x8698: return "Padding"; // Grid
+                case 0x81FD: return "Padding"; // Border
 
                 // Unknown
                 default: return null;
