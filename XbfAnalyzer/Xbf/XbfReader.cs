@@ -75,38 +75,41 @@ namespace XbfAnalyzer.Xbf
             return result;
         }
 
+
+        private int _firstNodeSectionPosition;
+        private List<Tuple<int, int>> _nodeSectionOffsets;
+
         // XBF v2 node parser functionality is mostly based on analysis of XBF v2.1 files. There are probably a lot of mistakes here!
         private void ReadNodesV2(BinaryReaderEx reader)
         {
-            // Get the stream mode(?)
-            // In a simple XBF file, this value is set to 1. When VisualStateGroups are present, it will be set to 2.
-            // When this value is set to 2, there will be two additional offset values specified at the beginning of the stream.
-            int mode = reader.ReadInt32();
+            // The first value is an int that indicates how many node sections we have.
+            // Each node section comes in two parts: the nodes themselves come first, followed by line/column data (positional data
+            // which indicates where the objects were located in the source XAML file).
+            // For each node section, there will be two offset numbers: one for the nodes, and one for the positional data.
+            //
+            // So far I've only seen secondary node sections being used for visual state data (VisualStateGroups, VisualStates, etc.).
+            // Some visual state information is included in the primary node stream (after control character 0x0F) but fully-expanded
+            // objects are only available in the secondary node streams (one per object that has VisualStateGroups defined).
 
-            // Not sure what the next four bytes are -- typical value is 00000000
-            // This could be an offset value for the primary node stream.
-            reader.ReadInt32();
+            // Get the number of node sections
+            int nodeSectionCount = reader.ReadInt32();
 
-            // Stream offset for the line/column position data
-            // The referenced section contains information about the line/column positions of nodes in the source XAML file.
-            int positionDataOffset = reader.ReadInt32();
-
-            // While the main part of the node stream will contain some (optimized?) visual state information, the fully-expanded
-            // XAML objects (VisualStateGroups, VisualStates, etc.) will only appear in a separate section near the end.
-            int visualStateNodeDataOffset = -1;
-            int visualStatePositionDataOffset = -1;
-
-            // If mode == 2, the visual state data offsets will follow.
-            if (mode == 2)
+            // Get the offsets for each node section
+            _nodeSectionOffsets = new List<Tuple<int, int>>(nodeSectionCount);
+            int nodeOffset, posOffset;
+            for (int i = 0; i < nodeSectionCount; i++)
             {
-                visualStateNodeDataOffset = reader.ReadInt32();
-                visualStatePositionDataOffset = reader.ReadInt32();
+                nodeOffset = reader.ReadInt32();
+                posOffset = reader.ReadInt32();
+                _nodeSectionOffsets.Add(new Tuple<int, int>(nodeOffset, posOffset));
             }
 
-            int startPosition = (int)reader.BaseStream.Position;
-            int endPosition = startPosition + positionDataOffset;
+            // We are now at the position in the stream of the first actual node data. We'll need this position later.
+            _firstNodeSectionPosition = (int)reader.BaseStream.Position;
 
+            // The first node section contains the primary XAML data (and the root XAML object)
             XbfObject rootObject = new XbfObject();
+            int endPosition = _firstNodeSectionPosition + _nodeSectionOffsets[0].Item2;
 
             try
             {
@@ -150,7 +153,7 @@ namespace XbfAnalyzer.Xbf
             }
             catch (Exception e)
             {
-                NodeParserError = string.Format("Error parsing node stream at file position {0} (0x{0:X}) (node start position was: {1} (0x{1:X}))" + Environment.NewLine, reader.BaseStream.Position - 1, startPosition) + e.ToString();
+                NodeParserError = string.Format("Error parsing node stream at file position {0} (0x{0:X}) (node start position was: {1} (0x{1:X}))" + Environment.NewLine, reader.BaseStream.Position - 1, _firstNodeSectionPosition) + e.ToString();
             }
 
             if (rootObject != null)
@@ -223,8 +226,6 @@ namespace XbfAnalyzer.Xbf
                         }
                         break;
 
-                    
-
                     case 0x13: // Object collection begin
                         {
                             string propertyName = GetPropertyNameV2(reader.ReadUInt16());
@@ -281,7 +282,10 @@ namespace XbfAnalyzer.Xbf
 
                     case 0x0F: // VisualStateGroups
                         {
-                            reader.ReadBytes(4); // TODO
+                            // The first value is the index of the node section that contains the fully-expanded nodes for this VisualStateGroup collection.
+                            int nodeSection = reader.Read7BitEncodedInt();
+
+                            reader.ReadBytes(3); // TODO
 
                             // Number of visual states
                             int visualStateCount = reader.Read7BitEncodedInt();
@@ -318,7 +322,9 @@ namespace XbfAnalyzer.Xbf
                             {
                                 int nameID = reader.ReadUInt16();
                                 reader.ReadByte(); // TODO
-                                reader.Read7BitEncodedInt(); // TODO
+
+                                // The offset within the node section for this VisualStateGroup
+                                int objectOffset = reader.Read7BitEncodedInt();
 
                                 var vsg = new XbfObject();
                                 vsg.TypeName = "VisualStateGroup";
