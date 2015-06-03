@@ -39,12 +39,25 @@ namespace XbfAnalyzer.Xbf
             // Uid
             if (Uid != null)
                 sb.AppendFormat(" x:Uid=\"{0}\"", Uid);
-            // Simple properties (to be displayed in-line)
-            foreach (var property in Properties.Where(p => !(p.Value is XbfObject || p.Value is List<XbfObject>)))
-                sb.AppendFormat(" {0}=\"{1}\"", property.Name, property.Value);
 
-            // Get complex properties (to be displayed inside the object body
-            var complexProperties = Properties.Where(p => p.Value is XbfObject || p.Value is List<XbfObject>).ToArray();
+            // Split this object's properties into simple and complex (object) properties
+            // Simple properties will be displayed in-line, and complex properties will be displayed in the object's body.
+            var isComplexPropertyLookup = Properties.ToLookup(p => p.Value is XbfObject || p.Value is List<XbfObject>);
+            var complexProperties = isComplexPropertyLookup[true].ToArray();
+            var simpleProperties = isComplexPropertyLookup[false].ToArray();
+
+            // If we have a small number of properties, just display them in-line
+            if (simpleProperties.Length <= 4)
+            {
+                foreach (var property in simpleProperties)
+                    sb.AppendFormat(" {0}=\"{1}\"", property.Name, property.Value);
+            }
+            // Otherwise, display each property on its own line
+            else
+            {
+                foreach (var property in simpleProperties)
+                    sb.AppendLine().AppendFormat(indent + _indent + "{0}=\"{1}\"", property.Name, property.Value);
+            }
 
             // If we don't have any complex properties or children, just close the object and return it
             if (complexProperties.Length == 0)
