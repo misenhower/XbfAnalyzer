@@ -107,9 +107,6 @@ namespace XbfAnalyzer.Xbf
             int endPosition = startPosition + positionDataOffset;
 
             XbfObject rootObject = new XbfObject();
-            Stack<XbfObject> objectStack = new Stack<XbfObject>();
-            objectStack.Push(rootObject);
-            Dictionary<string, string> namespaces = new Dictionary<string, string>();
 
             try
             {
@@ -123,9 +120,13 @@ namespace XbfAnalyzer.Xbf
                         case 0x12: // This usually appears to be the first byte encountered. I'm not sure what the difference between 0x12 and 0x03 is.
                         case 0x03: // Root node namespace declaration
                             {
-                                string name = XmlNamespaceTable[reader.ReadUInt16()];
+                                string namespaceName = XmlNamespaceTable[reader.ReadUInt16()];
                                 string prefix = ReadString(reader);
-                                namespaces[prefix] = name;
+                                if (!string.IsNullOrEmpty(prefix))
+                                    prefix = "xmlns:" + prefix;
+                                else
+                                    prefix = "xmlns";
+                                rootObject.Properties.Add(new XbfObjectProperty(prefix, namespaceName));
                             }
                             break;
 
@@ -138,180 +139,7 @@ namespace XbfAnalyzer.Xbf
                         case 0x17: // Root object begin
                             {
                                 rootObject.TypeName = GetTypeNameV2(reader.ReadUInt16());
-                            }
-                            break;
-
-                        case 0x14: // Normal object begin
-                            {
-                                XbfObject obj = new XbfObject();
-                                obj.TypeName = GetTypeNameV2(reader.ReadUInt16());
-                                objectStack.Push(obj);
-                            }
-                            break;
-
-                        case 0x13: // Object collection begin
-                            {
-                                string propertyName = GetPropertyNameV2(reader.ReadUInt16());
-                                objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, new List<XbfObject>()));
-                            }
-                            break;
-
-                        case 0x21: // End object
-                            {
-                                // This should be followed by 0x08, 0x07, or 0x20, but these may not be present at the end of the node stream.
-                                // I'm not sure if we need to do anything here
-                            }
-                            break;
-
-                        case 0x08: // Add the last object to the children of the previous object (should be a collection started by 0x13)
-                            {
-                                var obj = objectStack.Pop();
-                                var collection = (List<XbfObject>)objectStack.Peek().Properties.Last().Value;
-                                collection.Add(obj);
-                            }
-                            break;
-
-                        case 0x07: // Add the last object as a property of the previous object
-                        case 0x20: // Same as 0x07, but this seems to occur when the object is a {Binding} value
-                            {
-                                var obj = objectStack.Pop();
-                                string propertyName = GetPropertyNameV2(reader.ReadUInt16());
-                                objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, obj));
-                            }
-                            break;
-
-                        case 0x02: // This seems to happen at the end of a list of children. (Decreasing depth?)
-                            break;
-
-                        case 0x1A: // An object property
-                        case 0x1B: // An object property (not sure what the difference from 0x1A is)
-                            {
-                                string propertyName = GetPropertyNameV2(reader.ReadUInt16());
-                                object propertyValue = GetPropertyValueV2(reader);
-                                objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
-                            }
-                            break;
-
-                        case 0x1E: // StaticResource
-                            {
-                                string propertyName = GetPropertyNameV2(reader.ReadUInt16());
-                                object propertyValue = GetPropertyValueV2(reader);
-                                propertyValue = string.Format("{{StaticResource {0}}}", propertyValue);
-                                objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
-                            }
-                            break;
-
-                        case 0x24: // ThemeResource
-                            {
-                                string propertyName = GetPropertyNameV2(reader.ReadUInt16());
-                                object propertyValue = GetPropertyValueV2(reader);
-                                propertyValue = string.Format("{{ThemeResource {0}}}", propertyValue);
-                                objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
-                            }
-                            break;
-
-                        case 0x0C: // Indicates the object needs to be connected to something (e.g., a named variable, an event handler, etc.)
-                            {
-                                // This byte (0x0C) indicates the current object needs to be connected to something in the generated Connect method.
-                                // This can include event handlers, named objects (to be accessed via instance variables), etc.
-                                // Event handlers aren't explicitly included as part of the XBF node stream since they're wired up in (generated) code.
-                                // Each object that needs to be connected to something has a unique ID indicated in this section.
-                                // Example bytes: 0C 04 01 00 00 00
-
-                                // I've only seen 0x04 as the first byte value -- this may be a byte count?
-                                reader.ReadByte();
-                                // Connection ID
-                                objectStack.Peek().ConnectionID = reader.ReadInt32();
-                            }
-                            break;
-
-                        case 0x0D: // x:Name
-                            {
-                                string name = GetPropertyValueV2(reader).ToString();
-                                objectStack.Peek().Name = name;
-                            }
-                            break;
-
-                        case 0x0E: // x:Uid
-                            {
-                                object value = GetPropertyValueV2(reader);
-                                objectStack.Peek().Uid = value.ToString();
-                            }
-                            break;
-
-                        case 0x0F: // VisualStateGroups
-                            {
-                                reader.ReadBytes(4); // TODO
-
-                                // Number of visual states
-                                int visualStateCount = reader.Read7BitEncodedInt();
-                                // The following bytes indicate which visual states belong in each group
-                                int[] visualStateGroupMemberships = new int[visualStateCount];
-                                for (int i = 0; i < visualStateCount; i++)
-                                    visualStateGroupMemberships[i] = reader.Read7BitEncodedInt();
-
-                                // Number of visual states (again?)
-                                int visualStateCount2 = reader.Read7BitEncodedInt();
-                                if (visualStateCount != visualStateCount2)
-                                    throw new Exception("Visual state counts did not match"); // TODO: What does it mean when this happens? Will it ever happen?
-
-                                // Get the VisualState objects
-                                var visualStates = new XbfObject[visualStateCount2];
-                                for (int i = 0; i < visualStateCount2; i++)
-                                {
-                                    int nameID = reader.ReadUInt16();
-                                    reader.ReadBytes(7); // TODO
-
-                                    var obj = new XbfObject();
-                                    obj.TypeName = "VisualState";
-                                    obj.Name = StringTable[nameID];
-
-                                    visualStates[i] = obj;
-                                }
-
-                                // Number of VisualStateGroups
-                                int visualStateGroupCount = reader.Read7BitEncodedInt();
-
-                                // Get the VisualStateGroup objects
-                                var visualStateGroups = new XbfObject[visualStateGroupCount];
-                                for (int i = 0; i < visualStateGroupCount; i++)
-                                {
-                                    int nameID = reader.ReadUInt16();
-                                    reader.ReadByte(); // TODO
-                                    reader.Read7BitEncodedInt(); // TODO
-
-                                    var obj = new XbfObject();
-                                    obj.TypeName = "VisualStateGroup";
-                                    obj.Name = StringTable[nameID];
-
-                                    // Get the visual states that belong to this group
-                                    var states = new List<XbfObject>();
-                                    for (int j = 0; j < visualStateGroupMemberships.Length; j++)
-                                    {
-                                        if (visualStateGroupMemberships[j] == i)
-                                            states.Add(visualStates[j]);
-                                    }
-                                    if (states.Count > 0)
-                                        obj.Properties.Add(new XbfObjectProperty("States", states));
-
-                                    visualStateGroups[i] = obj;
-                                }
-
-                                reader.ReadBytes(5); // TODO
-
-                                // At the end we have a list of string references
-                                int stringCount = reader.Read7BitEncodedInt();
-                                for (int i = 0; i < stringCount; i++)
-                                {
-                                    int nameID = reader.ReadUInt16(); // TODO
-                                    System.Diagnostics.Debug.Print("Found string \"{0}\"", StringTable[nameID]);
-                                }
-
-                                // Now add all the VisualStateGroups to the last object's current collection
-                                // (This is a bit messy, it should probably happen in the handler of control code 0x02)
-                                var collection = (List<XbfObject>)objectStack.Peek().Properties.Last().Value;
-                                for (int i = 0; i < visualStateGroups.Length; i++)
-                                    collection.Add(visualStateGroups[i]);
+                                ReadObjectV2(reader, endPosition, rootObject);
                             }
                             break;
 
@@ -327,6 +155,218 @@ namespace XbfAnalyzer.Xbf
 
             if (rootObject != null)
                 NodeResultString = rootObject.ToString();
+        }
+
+        private XbfObject ReadObjectV2(BinaryReaderEx reader, int endPosition, XbfObject obj = null)
+        {
+            if (obj == null)
+            {
+                obj = new XbfObject();
+                obj.TypeName = GetTypeNameV2(reader.ReadUInt16());
+            }
+
+            byte controlByte;
+            while (reader.BaseStream.Position < endPosition)
+            {
+                controlByte = reader.ReadByte();
+                switch (controlByte)
+                {
+                    case 0x0C: // Connection
+                        // This byte (0x0C) indicates the current object needs to be connected to something in the generated Connect method.
+                        // This can include event handlers, named objects (to be accessed via instance variables), etc.
+                        // Event handlers aren't explicitly included as part of the XBF node stream since they're wired up in (generated) code.
+                        // Each object that needs to be connected to something has a unique ID indicated in this section.
+                        // Example bytes: 0C 04 01 00 00 00
+
+                        // I've only seen 0x04 as the first byte value -- this may be a byte count?
+                        reader.ReadByte();
+                        // Connection ID
+                        obj.ConnectionID = reader.ReadInt32();
+                        break;
+
+                    case 0x0D: // x:Name
+                        if (obj.Name != null)
+                            throw new Exception("Object already has a Name value");
+                        obj.Name = GetPropertyValueV2(reader).ToString();
+                        break;
+
+                    case 0x0E: // x:Uid
+                        if (obj.Uid != null)
+                            throw new Exception("Object already as a Uid value");
+                        obj.Uid = GetPropertyValueV2(reader).ToString();
+                        break;
+
+                    case 0x1A: // Property begin
+                    case 0x1B: // Property begin (not sure what the difference from 0x1A is)
+                        {
+                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                            object propertyValue = GetPropertyValueV2(reader);
+                            obj.Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
+                        }
+                        break;
+
+                    case 0x1E: // StaticResource
+                        {
+                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                            object propertyValue = GetPropertyValueV2(reader);
+                            propertyValue = string.Format("{{StaticResource {0}}}", propertyValue);
+                            obj.Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
+                        }
+                        break;
+
+                    case 0x24: // ThemeResource
+                        {
+                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                            object propertyValue = GetPropertyValueV2(reader);
+                            propertyValue = string.Format("{{ThemeResource {0}}}", propertyValue);
+                            obj.Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
+                        }
+                        break;
+
+                    
+
+                    case 0x13: // Object collection begin
+                        {
+                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                            var objects = ReadObjectCollectionV2(reader, endPosition);
+                            obj.Properties.Add(new XbfObjectProperty(propertyName, objects));
+                        }
+                        break;
+
+                    case 0x14: // Object begin
+                        {
+                            // We are starting a new object inside of the current object. It will be applied as a property of the current object.
+                            var subObj = ReadObjectV2(reader, endPosition);
+
+                            // Determine what we need to do with the new object
+                            controlByte = reader.ReadByte();
+                            switch (controlByte)
+                            {
+                                case 0x07: // Add the new object as a property of the current object
+                                case 0x20: // Same as 0x07, but this seems to occur when the object is a {Binding} value
+                                    string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                                    obj.Properties.Add(new XbfObjectProperty(propertyName, subObj));
+                                    break;
+
+                                default:
+                                    throw new Exception(string.Format("Unrecognized character 0x{0:X2} while parsing child object", controlByte));
+                            }
+                        }
+                        break;
+
+                    case 0x21: // Object end
+                        return obj;
+
+                    default:
+                        throw new Exception(string.Format("Unrecognized character 0x{0:X2} while parsing object", controlByte));
+                }
+            }
+
+            throw new Exception("Reached end of stream before finishing object");
+        }
+
+        private List<XbfObject> ReadObjectCollectionV2(BinaryReaderEx reader, int endPosition)
+        {
+            List<XbfObject> result = new List<XbfObject>();
+
+            byte controlByte;
+            while (reader.BaseStream.Position < endPosition)
+            {
+                controlByte = reader.ReadByte();
+                switch (controlByte)
+                {
+                    case 0x14: // Object begin
+                        result.Add(ReadObjectV2(reader, endPosition));
+                        break;
+
+                    case 0x0F: // VisualStateGroups
+                        {
+                            reader.ReadBytes(4); // TODO
+
+                            // Number of visual states
+                            int visualStateCount = reader.Read7BitEncodedInt();
+                            // The following bytes indicate which visual states belong in each group
+                            int[] visualStateGroupMemberships = new int[visualStateCount];
+                            for (int i = 0; i < visualStateCount; i++)
+                                visualStateGroupMemberships[i] = reader.Read7BitEncodedInt();
+
+                            // Number of visual states (again?)
+                            int visualStateCount2 = reader.Read7BitEncodedInt();
+                            if (visualStateCount != visualStateCount2)
+                                throw new Exception("Visual state counts did not match"); // TODO: What does it mean when this happens? Will it ever happen?
+
+                            // Get the VisualState objects
+                            var visualStates = new XbfObject[visualStateCount2];
+                            for (int i = 0; i < visualStateCount2; i++)
+                            {
+                                int nameID = reader.ReadUInt16();
+                                reader.ReadBytes(7); // TODO
+
+                                var vs = new XbfObject();
+                                vs.TypeName = "VisualState";
+                                vs.Name = StringTable[nameID];
+
+                                visualStates[i] = vs;
+                            }
+
+                            // Number of VisualStateGroups
+                            int visualStateGroupCount = reader.Read7BitEncodedInt();
+
+                            // Get the VisualStateGroup objects
+                            var visualStateGroups = new XbfObject[visualStateGroupCount];
+                            for (int i = 0; i < visualStateGroupCount; i++)
+                            {
+                                int nameID = reader.ReadUInt16();
+                                reader.ReadByte(); // TODO
+                                reader.Read7BitEncodedInt(); // TODO
+
+                                var vsg = new XbfObject();
+                                vsg.TypeName = "VisualStateGroup";
+                                vsg.Name = StringTable[nameID];
+
+                                // Get the visual states that belong to this group
+                                var states = new List<XbfObject>();
+                                for (int j = 0; j < visualStateGroupMemberships.Length; j++)
+                                {
+                                    if (visualStateGroupMemberships[j] == i)
+                                        states.Add(visualStates[j]);
+                                }
+                                if (states.Count > 0)
+                                    vsg.Properties.Add(new XbfObjectProperty("States", states));
+
+                                visualStateGroups[i] = vsg;
+                            }
+
+                            reader.ReadBytes(5); // TODO
+
+                            // At the end we have a list of string references
+                            int stringCount = reader.Read7BitEncodedInt();
+                            for (int i = 0; i < stringCount; i++)
+                            {
+                                int nameID = reader.ReadUInt16(); // TODO
+                                System.Diagnostics.Debug.Print("Found string \"{0}\"", StringTable[nameID]);
+                            }
+
+                            // Now add all the VisualStateGroups to the collection
+                            for (int i = 0; i < visualStateGroups.Length; i++)
+                                result.Add(visualStateGroups[i]);
+                        }
+                        break;
+
+                    case 0x08: // End of an object
+                        // (Nothing to do here)
+                        break;
+
+                    case 0x02: // End of collection
+                        return result;
+
+                    default:
+                        throw new Exception(string.Format("Unrecognized character 0x{0:X2} while parsing object collection", controlByte));
+
+                }
+            }
+
+            throw new Exception("Reached end of stream before finishing object collection");
         }
 
         private string GetTypeNameV2(int id)
