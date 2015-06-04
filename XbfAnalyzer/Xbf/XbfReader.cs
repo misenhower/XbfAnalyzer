@@ -285,6 +285,26 @@ namespace XbfAnalyzer.Xbf
                             // The first value is the index of the node section that contains the fully-expanded nodes for this VisualStateGroup collection.
                             int nodeSection = reader.Read7BitEncodedInt();
 
+                            // Get the expanded nodes from the specified section
+                            long originalPosition = reader.BaseStream.Position;
+                            int newPosition = _firstNodeSectionPosition + _nodeSectionOffsets[nodeSection].Item1;
+                            int newEndPosition = _firstNodeSectionPosition + _nodeSectionOffsets[nodeSection].Item2;
+
+                            // The first four bytes are: 0x01 (???), 0x13 (collection begin), 0x4681 (VisualStateManager.VisualStateGroups)
+                            newPosition += 4;
+
+                            // Go to the new position and read the objects
+                            reader.BaseStream.Position = newPosition;
+                            var objectCollection = ReadObjectCollectionV2(reader, newEndPosition);
+                            // Add the objects to our list (although we could probably just replace our list since it should be empty)
+                            result.AddRange(objectCollection);
+
+                            // Return to the original position
+                            reader.BaseStream.Position = originalPosition;
+
+                            // All of the data we need is in the specified node section (that we just read from), but we still have to parse the remainder of this 0x0F section to determine how long it is.
+                            // I'm going to leave most of the parsing code here for now for clarity and in case I need it later.
+
                             reader.ReadBytes(3); // TODO
 
                             // Number of visual states
@@ -353,9 +373,9 @@ namespace XbfAnalyzer.Xbf
                                 System.Diagnostics.Debug.Print("Found string \"{0}\"", StringTable[nameID]);
                             }
 
-                            // Now add all the VisualStateGroups to the collection
-                            for (int i = 0; i < visualStateGroups.Length; i++)
-                                result.Add(visualStateGroups[i]);
+                            // At this point we have a list of VisualStateGroup objects in the visualStateGroups variable.
+                            // These could be added to the result, but we already have them there from parsing the specified node section.
+                            //result.AddRange(visualStateGroups);
                         }
                         break;
 

@@ -27,6 +27,8 @@ namespace XbfAnalyzer.Xbf
                 case 0x80EF: return "x:Null";
                 case 0x802C: return "ColumnDefinition";
                 case 0x806A: return "RowDefinition";
+                case 0x808A: return "VisualStateGroup";
+                case 0x8089: return "VisualState";
 
                 // Properties
                 case 0x8310: return "FontSize"; // for a TextBlock ?
@@ -53,6 +55,7 @@ namespace XbfAnalyzer.Xbf
                 case 0x818D: return "Margin"; // FrameworkElement
                 case 0x8698: return "Padding"; // Grid
                 case 0x81FD: return "Padding"; // Border
+                case 0x8143: return "States"; // VisualStateGroup
 
                 // Unknown
                 default: return null;
