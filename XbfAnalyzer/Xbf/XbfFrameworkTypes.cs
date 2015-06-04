@@ -29,6 +29,9 @@ namespace XbfAnalyzer.Xbf
                 case 0x806A: return "RowDefinition";
                 case 0x808A: return "VisualStateGroup";
                 case 0x8089: return "VisualState";
+                case 0x8107: return "Setter";
+                case 0x82F5: return "AdaptiveTrigger";
+                case 0x82FF: return "StateTrigger";
 
                 // Properties
                 case 0x8310: return "FontSize"; // for a TextBlock ?
@@ -56,6 +59,13 @@ namespace XbfAnalyzer.Xbf
                 case 0x8698: return "Padding"; // Grid
                 case 0x81FD: return "Padding"; // Border
                 case 0x8143: return "States"; // VisualStateGroup
+                case 0x8616: return "Setters"; // VisualState
+                case 0x8617: return "StateTriggers"; // VisualState
+                case 0x861A: return "Target"; // Setter
+                case 0x81DB: return "Value"; // Setter
+                case 0x8618: return "MinWindowHeight"; // AdaptiveTrigger
+                case 0x8619: return "MinWindowWidth"; // AdaptiveTrigger
+                case 0x86A6: return "IsActive"; // StateTrigger
 
                 // Unknown
                 default: return null;

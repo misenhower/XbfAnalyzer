@@ -324,7 +324,40 @@ namespace XbfAnalyzer.Xbf
                             for (int i = 0; i < visualStateCount2; i++)
                             {
                                 int nameID = reader.ReadUInt16();
-                                reader.ReadBytes(7); // TODO
+
+                                reader.ReadBytes(2); // TODO
+
+                                // Get the Setters for this VisualState
+                                int setterCount = reader.Read7BitEncodedInt();
+                                for (int j = 0; j < setterCount; j++)
+                                {
+                                    int setterOffset = reader.Read7BitEncodedInt();
+                                }
+
+                                // Get the AdaptiveTriggers for this VisualState
+                                int adaptiveTriggerCount = reader.Read7BitEncodedInt();
+                                for (int j = 0; j < adaptiveTriggerCount; j++)
+                                {
+                                    // I'm not sure what this second count is for -- possibly for the number of properties set on the trigger
+                                    int count2 = reader.Read7BitEncodedInt();
+                                    for (int k = 0; k < count2; k++)
+                                        reader.Read7BitEncodedInt(); // TODO (probably node stream offsets)
+                                }
+
+                                // Get the StateTriggers for this VisualState
+                                int stateTriggerCount = reader.Read7BitEncodedInt();
+                                for (int j = 0; j < stateTriggerCount; j++)
+                                {
+                                    reader.Read7BitEncodedInt();
+                                }
+
+                                int count = reader.Read7BitEncodedInt(); // TODO: What is this a count of?
+                                for (int j = 0; j < count; j++)
+                                {
+                                    reader.Read7BitEncodedInt(); // TODO
+                                }
+
+                                reader.ReadByte(); // TODO
 
                                 var vs = new XbfObject();
                                 vs.TypeName = "VisualState";
