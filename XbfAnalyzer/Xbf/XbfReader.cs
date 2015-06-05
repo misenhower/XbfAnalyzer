@@ -277,7 +277,24 @@ namespace XbfAnalyzer.Xbf
                 switch (controlByte)
                 {
                     case 0x14: // Object begin
-                        result.Add(ReadObjectV2(reader, endPosition));
+                        var obj = ReadObjectV2(reader, endPosition);
+
+                        controlByte = reader.ReadByte();
+                        switch (controlByte)
+                        {
+                            case 0x08: // Add the object to the list (simple)
+                                result.Add(obj);
+                                break;
+
+                            case 0x0A: // Add the object to the list with a key
+                                // Note: technically the key is a property of the collection rather than the object itself, but for simplicity (and display purposes) we're just adding it to the object.
+                                obj.Key = GetPropertyValueV2(reader).ToString();
+                                result.Add(obj);
+                                break;
+
+                            default:
+                                throw new Exception(string.Format("Unrecognized character 0x{0:X2} while parsing collection object", controlByte));
+                        }
                         break;
 
                     case 0x0F: // VisualStateGroups
@@ -410,10 +427,6 @@ namespace XbfAnalyzer.Xbf
                             // These could be added to the result, but we already have them there from parsing the specified node section.
                             //result.AddRange(visualStateGroups);
                         }
-                        break;
-
-                    case 0x08: // End of an object
-                        // (Nothing to do here)
                         break;
 
                     case 0x02: // End of collection

@@ -11,6 +11,7 @@ namespace XbfAnalyzer.Xbf
         public string TypeName { get; set; }
         public string Name { get; set; }
         public string Uid { get; set; }
+        public string Key { get; set; }
         public int ConnectionID { get; set; }
 
         private readonly List<XbfObjectProperty> _properties = new List<XbfObjectProperty>();
@@ -39,6 +40,9 @@ namespace XbfAnalyzer.Xbf
             // Uid
             if (Uid != null)
                 sb.AppendFormat(" x:Uid=\"{0}\"", Uid);
+            // Key
+            if (Key != null)
+                sb.AppendFormat(" x:Key=\"{0}\"", Key);
 
             // Split this object's properties into simple and complex (object) properties
             // Simple properties will be displayed in-line, and complex properties will be displayed in the object's body.
