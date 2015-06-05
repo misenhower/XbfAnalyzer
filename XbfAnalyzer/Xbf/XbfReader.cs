@@ -432,14 +432,14 @@ namespace XbfAnalyzer.Xbf
         {
             if (id < TypeTable.Length)
                 return TypeTable[id].Name;
-            return XbfFrameworkTypes.GetNameForID(id) ?? string.Format("UnknownType0x{0:X4}", id);
+            return XbfFrameworkTypes.GetNameForTypeID(id) ?? string.Format("UnknownType0x{0:X4}", id);
         }
 
         private string GetPropertyNameV2(int id)
         {
             if (id < PropertyTable.Length)
                 return PropertyTable[id].Name;
-            return XbfFrameworkTypes.GetNameForID(id) ?? string.Format("UnknownProperty0x{0:X4}", id);
+            return XbfFrameworkTypes.GetNameForPropertyID(id) ?? string.Format("UnknownProperty0x{0:X4}", id);
         }
 
         private string GetEnumerationValueV2(int enumID, int enumValue)

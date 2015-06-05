@@ -8,7 +8,7 @@ namespace XbfAnalyzer.Xbf
 {
     public static class XbfFrameworkTypes
     {
-        public static string GetNameForID(int id)
+        public static string GetNameForTypeID(int id)
         {
             // I have not been able to find a source for mapping the built-in framework type names to their XBF v2 IDs.
             // This is just a collection of type names I've found by generating and analyzing files.
@@ -32,7 +32,46 @@ namespace XbfAnalyzer.Xbf
                 case 0x8107: return "Setter";
                 case 0x82F5: return "AdaptiveTrigger";
                 case 0x82FF: return "StateTrigger";
+                case 0x82E8: return "RelativePanel";
+                case 0x8306: return "CalendarDatePicker";
+                case 0x82C3: return "CalendarView";
+                case 0x82C5: return "CalendarViewDayItem";
+                case 0x81EF: return "AppBar";
+                case 0x822D: return "AppBarButton";
+                case 0x823A: return "GridView";
+                case 0x81E1: return "StackPanel";
+                case 0x8120: return "CaptureElement";
+                case 0x8128: return "ContentPresenter";
+                case 0x8146: return "Image";
+                case 0x814C: return "ItemsPresenter";
+                case 0x81AB: return "AppBarSeparator";
+                case 0x822F: return "CheckBox";
+                case 0x8236: return "ComboBox";
+                case 0x81F6: return "CarouselPanel";
+                case 0x821E: return "CommandBar";
+                case 0x81FD: return "Frame";
+                case 0x81B8: return "FontIcon";
+                case 0x81E6: return "TickBar";
+                case 0x81E7: return "TimePicker";
+                case 0x8229: return "ToggleButton";
+                case 0x822A: return "ToggleMenuFlyoutItem";
+                case 0x81E9: return "ToggleSwitch";
+                case 0x821A: return "ToolTip";
+                case 0x81EC: return "VariableSizedWrapGrid";
+                case 0x81A1: return "Viewbox";
+                case 0x822B: return "VirtualizingStackPanel";
+                case 0x81EE: return "WebView";
+                case 0x822C: return "WrapGrid";
 
+                // Unknown
+                default: return null;
+            }
+        }
+
+        public static string GetNameForPropertyID(int id)
+        {
+            switch (id)
+            {
                 // Properties
                 case 0x8310: return "FontSize"; // for a TextBlock ?
                 case 0x8224: return "FontSize"; // for a UserControl ?
