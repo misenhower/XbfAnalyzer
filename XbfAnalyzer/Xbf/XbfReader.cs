@@ -87,9 +87,15 @@ namespace XbfAnalyzer.Xbf
             // which indicates where the objects were located in the source XAML file).
             // For each node section, there will be two offset numbers: one for the nodes, and one for the positional data.
             //
-            // So far I've only seen secondary node sections being used for visual state data (VisualStateGroups, VisualStates, etc.).
-            // Some visual state information is included in the primary node stream (after control character 0x0F) but fully-expanded
-            // objects are only available in the secondary node streams (one per object that has VisualStateGroups defined).
+            // There seem to be a few situations that trigger a separate node section to be generated, including:
+            // - Visual state data (VisualStateGroups, VisualStates, etc.) seem to always generate a separate section.
+            //   Some visual state information is included in the primary node stream (after control character 0x0F) but fully-expanded
+            //   objects are only available in the secondary node streams (one per object that has VisualStateGroups defined).
+            // - Resource collections (i.e., groups of objects with x:Key values) seem generate a separate section when they have more than one item.
+            //   Different types of resources seem to generate multiple resource collections for the same object.
+            //   For example, Brush resources are listed separately from Style resources.
+            //
+            // Note that secondary node sections can also contain references to other node sections as well.
 
             // Get the number of node sections
             int nodeSectionCount = reader.ReadInt32();
@@ -297,7 +303,7 @@ namespace XbfAnalyzer.Xbf
                         }
                         break;
 
-                    case 0x0F: // VisualStateGroups
+                    case 0x0F: // Reference to a different code section
                         {
                             // The first value is the index of the node section that contains the fully-expanded nodes for this VisualStateGroup collection.
                             int nodeSection = reader.Read7BitEncodedInt();
