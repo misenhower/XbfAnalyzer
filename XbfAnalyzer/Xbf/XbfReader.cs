@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -235,7 +236,7 @@ namespace XbfAnalyzer.Xbf
                     case 0x13: // Object collection begin
                         {
                             string propertyName = GetPropertyNameV2(reader.ReadUInt16());
-                            var objects = ReadObjectCollectionV2(reader, endPosition);
+                            var objects = ReadObjectCollectionV2(reader, endPosition, false);
                             obj.Properties.Add(new XbfObjectProperty(propertyName, objects));
                         }
                         break;
@@ -272,7 +273,7 @@ namespace XbfAnalyzer.Xbf
             throw new Exception("Reached end of stream before finishing object");
         }
 
-        private List<XbfObject> ReadObjectCollectionV2(BinaryReaderEx reader, int endPosition)
+        private List<XbfObject> ReadObjectCollectionV2(BinaryReaderEx reader, int endPosition, bool isSecondaryNodeSection)
         {
             List<XbfObject> result = new List<XbfObject>();
 
@@ -307,133 +308,65 @@ namespace XbfAnalyzer.Xbf
 
                     case 0x0F: // Reference to a different code section
                         {
-                            // The first value is the index of the node section that contains the fully-expanded nodes for this VisualStateGroup collection.
+                            // The first value is the index of the node section that contains the fully-expanded nodes for this collection.
                             int nodeSection = reader.Read7BitEncodedInt();
 
-                            // Get the expanded nodes from the specified section
+                            // Read the expanded nodes from the specified section
                             long originalPosition = reader.BaseStream.Position;
                             int newPosition = _firstNodeSectionPosition + _nodeSectionOffsets[nodeSection].Item1;
                             int newEndPosition = _firstNodeSectionPosition + _nodeSectionOffsets[nodeSection].Item2;
 
-                            // The first four bytes are: 0x01 (???), 0x13 (collection begin), 0x4681 (VisualStateManager.VisualStateGroups)
-                            newPosition += 4;
-
-                            // Go to the new position and read the objects
                             reader.BaseStream.Position = newPosition;
-                            var objectCollection = ReadObjectCollectionV2(reader, newEndPosition);
-                            // Add the objects to our list (although we could probably just replace our list since it should be empty)
+
+                            // Skip ahead to the actual values in the collection
+                            while (reader.BaseStream.Position < newEndPosition)
+                            {
+                                controlByte = reader.ReadByte();
+
+                                if (controlByte == 0x01) // Not sure what this means -- seems to appear at the beginning of visual state sections
+                                    continue;
+
+                                if (controlByte == 0x13)
+                                {
+                                    // This will be the property name we're getting values for. We already know what this value is (it should have appeared already, after the 0x14 that signaled the beginning of this collection).
+                                    reader.ReadUInt16();
+                                    break;
+                                }
+
+                                throw new Exception(string.Format("Unexpected control byte 0x{0:X2} in secondary node section", controlByte));
+                            }
+
+                            // Get the values
+                            var objectCollection = ReadObjectCollectionV2(reader, newEndPosition, true);
+
+                            // Add the objects to our list. (We could probably just replace our list since it should be empty.)
                             result.AddRange(objectCollection);
 
                             // Return to the original position
                             reader.BaseStream.Position = originalPosition;
 
+                            // Now we need to determine where this 0x0F section ends.
                             // All of the data we need is in the specified node section (that we just read from), but we still have to parse the remainder of this 0x0F section to determine how long it is.
-                            // I'm going to leave most of the parsing code here for now for clarity and in case I need it later.
 
-                            reader.ReadBytes(3); // TODO
+                            reader.ReadBytes(2); // TODO -- I've only seen 0x0000 for these
 
-                            // Number of visual states
-                            int visualStateCount = reader.Read7BitEncodedInt();
-                            // The following bytes indicate which visual states belong in each group
-                            int[] visualStateGroupMemberships = new int[visualStateCount];
-                            for (int i = 0; i < visualStateCount; i++)
-                                visualStateGroupMemberships[i] = reader.Read7BitEncodedInt();
+                            // Get the type of nodes contained in this section (?)
+                            int type = reader.Read7BitEncodedInt();
 
-                            // Number of visual states (again?)
-                            int visualStateCount2 = reader.Read7BitEncodedInt();
-                            if (visualStateCount != visualStateCount2)
-                                throw new Exception("Visual state counts did not match"); // TODO: What does it mean when this happens? Will it ever happen?
-
-                            // Get the VisualState objects
-                            var visualStates = new XbfObject[visualStateCount2];
-                            for (int i = 0; i < visualStateCount2; i++)
+                            switch (type)
                             {
-                                int nameID = reader.ReadUInt16();
-
-                                reader.ReadBytes(2); // TODO
-
-                                // Get the Setters for this VisualState
-                                int setterCount = reader.Read7BitEncodedInt();
-                                for (int j = 0; j < setterCount; j++)
-                                {
-                                    int setterOffset = reader.Read7BitEncodedInt();
-                                }
-
-                                // Get the AdaptiveTriggers for this VisualState
-                                int adaptiveTriggerCount = reader.Read7BitEncodedInt();
-                                for (int j = 0; j < adaptiveTriggerCount; j++)
-                                {
-                                    // I'm not sure what this second count is for -- possibly for the number of properties set on the trigger
-                                    int count2 = reader.Read7BitEncodedInt();
-                                    for (int k = 0; k < count2; k++)
-                                        reader.Read7BitEncodedInt(); // TODO (probably node stream offsets)
-                                }
-
-                                // Get the StateTriggers for this VisualState
-                                int stateTriggerCount = reader.Read7BitEncodedInt();
-                                for (int j = 0; j < stateTriggerCount; j++)
-                                {
-                                    reader.Read7BitEncodedInt();
-                                }
-
-                                int count = reader.Read7BitEncodedInt(); // TODO: What is this a count of?
-                                for (int j = 0; j < count; j++)
-                                {
-                                    reader.Read7BitEncodedInt(); // TODO
-                                }
-
-                                reader.ReadByte(); // TODO
-
-                                var vs = new XbfObject();
-                                vs.TypeName = "VisualState";
-                                vs.Name = StringTable[nameID];
-
-                                visualStates[i] = vs;
+                                case 2: // Styles
+                                    SkipStyleBytes(reader);
+                                    break;
+                                case 371: // Objects
+                                    SkipObjectBytes(reader);
+                                    break;
+                                case 5: // Visual states
+                                    SkipVisualStateBytes(reader);
+                                    break;
+                                default:
+                                    throw new Exception(string.Format("Unknown node type {0} while parsing referenced code section", type));
                             }
-
-                            // Number of VisualStateGroups
-                            int visualStateGroupCount = reader.Read7BitEncodedInt();
-
-                            // Get the VisualStateGroup objects
-                            var visualStateGroups = new XbfObject[visualStateGroupCount];
-                            for (int i = 0; i < visualStateGroupCount; i++)
-                            {
-                                int nameID = reader.ReadUInt16();
-                                reader.ReadByte(); // TODO
-
-                                // The offset within the node section for this VisualStateGroup
-                                int objectOffset = reader.Read7BitEncodedInt();
-
-                                var vsg = new XbfObject();
-                                vsg.TypeName = "VisualStateGroup";
-                                vsg.Name = StringTable[nameID];
-
-                                // Get the visual states that belong to this group
-                                var states = new List<XbfObject>();
-                                for (int j = 0; j < visualStateGroupMemberships.Length; j++)
-                                {
-                                    if (visualStateGroupMemberships[j] == i)
-                                        states.Add(visualStates[j]);
-                                }
-                                if (states.Count > 0)
-                                    vsg.Properties.Add(new XbfObjectProperty("States", states));
-
-                                visualStateGroups[i] = vsg;
-                            }
-
-                            reader.ReadBytes(5); // TODO
-
-                            // At the end we have a list of string references
-                            int stringCount = reader.Read7BitEncodedInt();
-                            for (int i = 0; i < stringCount; i++)
-                            {
-                                int nameID = reader.ReadUInt16(); // TODO
-                                System.Diagnostics.Debug.Print("Found string \"{0}\"", StringTable[nameID]);
-                            }
-
-                            // At this point we have a list of VisualStateGroup objects in the visualStateGroups variable.
-                            // These could be added to the result, but we already have them there from parsing the specified node section.
-                            //result.AddRange(visualStateGroups);
                         }
                         break;
 
@@ -458,7 +391,132 @@ namespace XbfAnalyzer.Xbf
                 }
             }
 
-            throw new Exception("Reached end of stream before finishing object collection");
+            if (!isSecondaryNodeSection)
+                throw new Exception("Reached end of stream before finishing object collection");
+
+            Debug.WriteLine("WARNING: ignoring early end-of-stream in secondary node section at position 0x{0:X}", reader.BaseStream.Position);
+            return result;
+        }
+
+        private void SkipStyleBytes(BinaryReaderEx reader)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void SkipObjectBytes(BinaryReaderEx reader)
+        {
+            int count = reader.Read7BitEncodedInt();
+            for (int i = 0; i < count; i++)
+            {
+                reader.ReadUInt16(); // Name
+                reader.Read7BitEncodedInt(); // Secondary node stream offset
+            }
+            reader.ReadBytes(4); // Unknown
+        }
+
+        private void SkipVisualStateBytes(BinaryReaderEx reader)
+        {
+            // Number of visual states
+            int visualStateCount = reader.Read7BitEncodedInt();
+            // The following bytes indicate which visual states belong in each group
+            int[] visualStateGroupMemberships = new int[visualStateCount];
+            for (int i = 0; i < visualStateCount; i++)
+                visualStateGroupMemberships[i] = reader.Read7BitEncodedInt();
+
+            // Number of visual states (again?)
+            int visualStateCount2 = reader.Read7BitEncodedInt();
+            if (visualStateCount != visualStateCount2)
+                throw new Exception("Visual state counts did not match"); // TODO: What does it mean when this happens? Will it ever happen?
+
+            // Get the VisualState objects
+            var visualStates = new XbfObject[visualStateCount2];
+            for (int i = 0; i < visualStateCount2; i++)
+            {
+                int nameID = reader.ReadUInt16();
+
+                reader.ReadBytes(2); // TODO
+
+                // Get the Setters for this VisualState
+                int setterCount = reader.Read7BitEncodedInt();
+                for (int j = 0; j < setterCount; j++)
+                {
+                    int setterOffset = reader.Read7BitEncodedInt();
+                }
+
+                // Get the AdaptiveTriggers for this VisualState
+                int adaptiveTriggerCount = reader.Read7BitEncodedInt();
+                for (int j = 0; j < adaptiveTriggerCount; j++)
+                {
+                    // I'm not sure what this second count is for -- possibly for the number of properties set on the trigger
+                    int count2 = reader.Read7BitEncodedInt();
+                    for (int k = 0; k < count2; k++)
+                        reader.Read7BitEncodedInt(); // TODO (probably node stream offsets)
+                }
+
+                // Get the StateTriggers for this VisualState
+                int stateTriggerCount = reader.Read7BitEncodedInt();
+                for (int j = 0; j < stateTriggerCount; j++)
+                {
+                    reader.Read7BitEncodedInt();
+                }
+
+                int count = reader.Read7BitEncodedInt(); // TODO: What is this a count of?
+                for (int j = 0; j < count; j++)
+                {
+                    reader.Read7BitEncodedInt(); // TODO
+                }
+
+                reader.ReadByte(); // TODO
+
+                var vs = new XbfObject();
+                vs.TypeName = "VisualState";
+                vs.Name = StringTable[nameID];
+
+                visualStates[i] = vs;
+            }
+
+            // Number of VisualStateGroups
+            int visualStateGroupCount = reader.Read7BitEncodedInt();
+
+            // Get the VisualStateGroup objects
+            var visualStateGroups = new XbfObject[visualStateGroupCount];
+            for (int i = 0; i < visualStateGroupCount; i++)
+            {
+                int nameID = reader.ReadUInt16();
+                reader.ReadByte(); // TODO
+
+                // The offset within the node section for this VisualStateGroup
+                int objectOffset = reader.Read7BitEncodedInt();
+
+                var vsg = new XbfObject();
+                vsg.TypeName = "VisualStateGroup";
+                vsg.Name = StringTable[nameID];
+
+                // Get the visual states that belong to this group
+                var states = new List<XbfObject>();
+                for (int j = 0; j < visualStateGroupMemberships.Length; j++)
+                {
+                    if (visualStateGroupMemberships[j] == i)
+                        states.Add(visualStates[j]);
+                }
+                if (states.Count > 0)
+                    vsg.Properties.Add(new XbfObjectProperty("States", states));
+
+                visualStateGroups[i] = vsg;
+            }
+
+            reader.ReadBytes(5); // TODO
+
+            // At the end we have a list of string references
+            int stringCount = reader.Read7BitEncodedInt();
+            for (int i = 0; i < stringCount; i++)
+            {
+                int nameID = reader.ReadUInt16(); // TODO
+                System.Diagnostics.Debug.Print("Found string \"{0}\"", StringTable[nameID]);
+            }
+
+            // At this point we have a list of VisualStateGroup objects in the visualStateGroups variable.
+            // These could be added to the result, but we already have them there from parsing the specified node section.
         }
 
         private string GetTypeNameV2(int id)
