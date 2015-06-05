@@ -16,6 +16,11 @@ namespace XbfAnalyzer.Xbf
             switch (id)
             {
                 // Objects
+                case 0x8024: return "x:Boolean";
+                case 0x8034: return "x:Double";
+                case 0x804C: return "x:Int32";
+                case 0x8071: return "x:String";
+                case 0x80EF: return "x:Null";
                 case 0x81EB: return "UserControl";
                 case 0x81BA: return "Grid";
                 case 0x818C: return "TextBlock";
@@ -24,7 +29,6 @@ namespace XbfAnalyzer.Xbf
                 case 0x821C: return "Button";
                 case 0x8109: return "SolidColorBrush";
                 case 0x8234: return "Binding";
-                case 0x80EF: return "x:Null";
                 case 0x802C: return "ColumnDefinition";
                 case 0x806A: return "RowDefinition";
                 case 0x808A: return "VisualStateGroup";
@@ -105,6 +109,7 @@ namespace XbfAnalyzer.Xbf
                 case 0x8618: return "MinWindowHeight"; // AdaptiveTrigger
                 case 0x8619: return "MinWindowWidth"; // AdaptiveTrigger
                 case 0x86A6: return "IsActive"; // StateTrigger
+                case 0x8194: return "Resources"; // FrameworkElement
 
                 // Unknown
                 default: return null;

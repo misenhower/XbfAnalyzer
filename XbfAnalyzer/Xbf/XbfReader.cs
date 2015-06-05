@@ -283,23 +283,25 @@ namespace XbfAnalyzer.Xbf
                 switch (controlByte)
                 {
                     case 0x14: // Object begin
-                        var obj = ReadObjectV2(reader, endPosition);
-
-                        controlByte = reader.ReadByte();
-                        switch (controlByte)
                         {
-                            case 0x08: // Add the object to the list (simple)
-                                result.Add(obj);
-                                break;
+                            var obj = ReadObjectV2(reader, endPosition);
 
-                            case 0x0A: // Add the object to the list with a key
-                                // Note: technically the key is a property of the collection rather than the object itself, but for simplicity (and display purposes) we're just adding it to the object.
-                                obj.Key = GetPropertyValueV2(reader).ToString();
-                                result.Add(obj);
-                                break;
+                            controlByte = reader.ReadByte();
+                            switch (controlByte)
+                            {
+                                case 0x08: // Add the object to the list (simple)
+                                    result.Add(obj);
+                                    break;
 
-                            default:
-                                throw new Exception(string.Format("Unrecognized character 0x{0:X2} while parsing collection object", controlByte));
+                                case 0x0A: // Add the object to the list with a key
+                                    // Note: technically the key is a property of the collection rather than the object itself, but for simplicity (and display purposes) we're just adding it to the object.
+                                    obj.Key = GetPropertyValueV2(reader).ToString();
+                                    result.Add(obj);
+                                    break;
+
+                                default:
+                                    throw new Exception(string.Format("Unrecognized character 0x{0:X2} while parsing collection object", controlByte));
+                            }
                         }
                         break;
 
@@ -432,6 +434,18 @@ namespace XbfAnalyzer.Xbf
                             // At this point we have a list of VisualStateGroup objects in the visualStateGroups variable.
                             // These could be added to the result, but we already have them there from parsing the specified node section.
                             //result.AddRange(visualStateGroups);
+                        }
+                        break;
+
+                    case 0x15: // Literal value (x:Int32, x:String, etc.)
+                        {
+                            XbfObject obj = new XbfObject();
+                            obj.TypeName = GetTypeNameV2(reader.ReadUInt16());
+                            object value = GetPropertyValueV2(reader);
+                            reader.ReadBytes(2); // TODO -- value seems to be 0x210A
+                            obj.Key = GetPropertyValueV2(reader).ToString();
+                            obj.Properties.Add(new XbfObjectProperty("Value", value)); // TODO: This isn't really correct since the value for these types just appears in the object body
+                            result.Add(obj);
                         }
                         break;
 
