@@ -181,6 +181,10 @@ namespace XbfAnalyzer.Xbf
                 controlByte = reader.ReadByte();
                 switch (controlByte)
                 {
+                    case 0x04: // This seems to be another way to specify the class of the root object -- I haven't been able to generate any XBF files that use this control character
+                        obj.Properties.Add(new XbfObjectProperty("x:Class", GetPropertyValueV2(reader)));
+                        break;
+
                     case 0x0C: // Connection
                         // This byte (0x0C) indicates the current object needs to be connected to something in the generated Connect method.
                         // This can include event handlers, named objects (to be accessed via instance variables), etc.
