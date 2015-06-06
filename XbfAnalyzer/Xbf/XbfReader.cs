@@ -13,6 +13,8 @@ namespace XbfAnalyzer.Xbf
     {
         public XbfReader(string path)
         {
+            _path = path;
+
             using (var fileStream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             using (var reader = new BinaryReaderEx(fileStream, Encoding.Unicode))
             {
@@ -29,6 +31,7 @@ namespace XbfAnalyzer.Xbf
             }
         }
 
+        private readonly string _path;
         public XbfHeader Header { get; private set; }
         public string[] StringTable { get; private set; }
         public XbfAssembly[] AssemblyTable { get; private set; }
@@ -114,6 +117,8 @@ namespace XbfAnalyzer.Xbf
             // We are now at the position in the stream of the first actual node data. We'll need this position later.
             _firstNodeSectionPosition = (int)reader.BaseStream.Position;
 
+            PrintNodeSectionBytes(reader);
+
             // The first node section contains the primary XAML data (and the root XAML object)
             XbfObject rootObject = new XbfObject();
             int endPosition = _firstNodeSectionPosition + _nodeSectionOffsets[0].Item2;
@@ -165,6 +170,26 @@ namespace XbfAnalyzer.Xbf
 
             if (rootObject != null)
                 NodeResultString = rootObject.ToString();
+        }
+
+        private void PrintNodeSectionBytes(BinaryReaderEx reader)
+        {
+            long originalPosition = reader.BaseStream.Position;
+
+            Debug.WriteLine("Node sections for file: " + _path);
+
+            for (int i = 0; i < _nodeSectionOffsets.Count; i++)
+            {
+                var sectionOffset = _nodeSectionOffsets[i];
+                int startPosition = _firstNodeSectionPosition + sectionOffset.Item1;
+                int length = sectionOffset.Item2 - sectionOffset.Item1;
+                reader.BaseStream.Position = startPosition;
+                var bytes = reader.ReadBytes(length);
+                Debug.WriteLine("Node section {0}, length: {1} (0x{1:X}), file positions: {2}-{3} (0x{2:X}-0x{3:X}):", i, length, startPosition, startPosition + length - 1);
+                Debug.WriteLine(string.Join(" ", bytes.Select(b => b.ToString("X2"))));
+            }
+
+            reader.BaseStream.Position = originalPosition;
         }
 
         private XbfObject ReadObjectV2(BinaryReaderEx reader, int endPosition, XbfObject obj = null)
