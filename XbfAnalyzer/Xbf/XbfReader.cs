@@ -335,6 +335,7 @@ namespace XbfAnalyzer.Xbf
                             switch (controlByte)
                             {
                                 case 0x08: // Add the object to the list (simple)
+                                case 0x09: // Seems to have 0x09 instead of 0x08 with Styles that don't have a Key
                                     result.Add(obj);
                                     break;
 
