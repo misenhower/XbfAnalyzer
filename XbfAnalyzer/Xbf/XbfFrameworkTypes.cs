@@ -69,6 +69,24 @@ namespace XbfAnalyzer.Xbf
                 case 0x8072: return "Style";
                 case 0x80C2: return "DataTemplate";
                 case 0x820D: return "Page";
+                case 0x8238: return "ListBox";
+                case 0x823B: return "ListView";
+                case 0x8216: return "Slider";
+                case 0x8176: return "RichTextBlock";
+                case 0x81D9: return "RichEditBox";
+                case 0x81D6: return "Rectangle";
+                case 0x81B6: return "Ellipse";
+                case 0x81C4: return "Line";
+                case 0x8237: return "FlipView";
+                case 0x821F: return "FlipViewItem";
+                case 0x81D1: return "Polygon";
+                case 0x81D2: return "Polyline";
+                case 0x8210: return "ProgressBar";
+                case 0x81D4: return "ProgressRing";
+                case 0x8228: return "ScrollViewer";
+                case 0x81DD: return "SearchBox";
+                case 0x81DF: return "SemanticZoom";
+                case 0x82D8: return "SplitView";
 
                 // Unknown
                 default: return null;
@@ -117,6 +135,35 @@ namespace XbfAnalyzer.Xbf
                 case 0x8194: return "Resources"; // FrameworkElement
                 case 0x80F7: return "Setters"; // Style
                 case 0x80F4: return "BasedOn"; // Style
+                case 0x830F: return "FontFamily"; // TextBlock
+                case 0x8313: return "FontWeight"; // TextBlock
+                case 0x8312: return "FontStyle"; // TextBlock
+                case 0x8125: return "CacheMode"; // UIElement
+                case 0x8128: return "CompositeMode"; // UIElement
+                case 0x835C: return "Grid.Row"; // Grid
+                case 0x835E: return "Grid.RowSpan"; // Grid
+                case 0x8359: return "Grid.Column"; // Grid
+                case 0x835B: return "Grid.ColumnSpan"; // Grid
+                case 0x8187: return "DataContext"; // FrameworkElement
+                case 0x8319: return "LineHeight"; // TextBlock
+                case 0x831A: return "LineStackingStrategy"; // TextBlock
+                case 0x81E7: return "Converter"; // Binding
+                case 0x81E8: return "ConverterLanguage"; // Binding
+                case 0x81E9: return "ConverterParameter"; // Binding
+                case 0x81EA: return "ElementName"; // Binding
+                case 0x81EB: return "FallbackValue"; // Binding
+                case 0x81EC: return "Mode"; // Binding
+                case 0x81EE: return "RelativeSource"; // Binding
+                case 0x81EF: return "Source"; // Binding
+                case 0x81F0: return "TargetNullValue"; // Binding
+                case 0x8230: return "Template"; // Control
+                case 0x8223: return "FontFamily"; // Control
+                case 0x8227: return "FontWeight"; // Control
+                case 0x8226: return "FontStyle"; // Control
+                case 0x818A: return "HorizontalAlignment"; // FrameworkElement
+                case 0x8198: return "VerticalAlignment"; // FrameworkElement
+                case 0x8195: return "Style"; // FrameworkElement
+                case 0x83C2: return "Orientation"; // StackPanel
 
                 // Unknown
                 default: return null;
