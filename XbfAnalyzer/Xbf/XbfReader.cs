@@ -210,6 +210,35 @@ namespace XbfAnalyzer.Xbf
                         obj.Uid = GetPropertyValueV2(reader).ToString();
                         break;
 
+                    case 0x11: // DataTemplate
+                        {
+                            // TODO: I think the first value is a property name, but content for DataTemplates is set directly -- will need to just display it inside the object
+                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                            int nodeSection = reader.Read7BitEncodedInt();
+                            reader.ReadBytes(2); // TODO
+
+                            // Move the reader to the specified node section's position
+                            long originalPosition = reader.BaseStream.Position;
+                            int newPosition = _firstNodeSectionPosition + _nodeSectionOffsets[nodeSection].Item1;
+                            int newEndPosition = _firstNodeSectionPosition + _nodeSectionOffsets[nodeSection].Item2;
+
+                            reader.BaseStream.Position = newPosition;
+
+                            // Make sure we have an object
+                            if (reader.ReadByte() != 0x14)
+                                throw new Exception("Unexpected character");
+
+                            // Read the object
+                            var value = ReadObjectV2(reader, newEndPosition);
+
+                            // Return the reader to the original position
+                            reader.BaseStream.Position = originalPosition;
+
+                            // Add the object we found as a property
+                            obj.Properties.Add(new XbfObjectProperty(propertyName, value));
+                        }
+                        break;
+
                     case 0x1A: // Property begin
                     case 0x1B: // Property begin (not sure what the difference from 0x1A is)
                         {

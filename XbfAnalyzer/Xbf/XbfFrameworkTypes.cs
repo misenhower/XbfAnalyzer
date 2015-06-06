@@ -67,6 +67,7 @@ namespace XbfAnalyzer.Xbf
                 case 0x81EE: return "WebView";
                 case 0x822C: return "WrapGrid";
                 case 0x8072: return "Style";
+                case 0x80C2: return "DataTemplate";
 
                 // Unknown
                 default: return null;
