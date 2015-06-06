@@ -113,6 +113,7 @@ namespace XbfAnalyzer.Xbf
                 case 0x86A6: return "IsActive"; // StateTrigger
                 case 0x8194: return "Resources"; // FrameworkElement
                 case 0x80F7: return "Setters"; // Style
+                case 0x80F4: return "BasedOn"; // Style
 
                 // Unknown
                 default: return null;

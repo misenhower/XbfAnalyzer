@@ -26,7 +26,7 @@ namespace XbfAnalyzer.Xbf
 
         private const string _indent = "    ";
 
-        public string ToString(int indentLevel)
+        public virtual string ToString(int indentLevel)
         {
             string indent = string.Concat(Enumerable.Repeat(_indent, indentLevel));
 
@@ -46,7 +46,7 @@ namespace XbfAnalyzer.Xbf
 
             // Split this object's properties into simple and complex (object) properties
             // Simple properties will be displayed in-line, and complex properties will be displayed in the object's body.
-            var isComplexPropertyLookup = Properties.ToLookup(p => p.Value is XbfObject || p.Value is List<XbfObject>);
+            var isComplexPropertyLookup = Properties.ToLookup(p => p.Value is XbfObject || p.Value is XbfObjectCollection);
             var complexProperties = isComplexPropertyLookup[true].ToArray();
             var simpleProperties = isComplexPropertyLookup[false].ToArray();
 
@@ -76,20 +76,18 @@ namespace XbfAnalyzer.Xbf
             // Complex properties
             foreach (var property in complexProperties)
             {
+                var collection = property.Value as XbfObjectCollection;
+                if (collection != null && collection.Count == 0)
+                    continue;
+
                 var propertyName = TypeName + "." + property.Name;
                 sb.AppendFormat(indent + _indent + "<{0}>", propertyName);
                 sb.AppendLine();
 
                 if (property.Value is XbfObject)
-                {
                     sb.AppendLine(((XbfObject)property.Value).ToString(indentLevel + 2));
-                }
                 else
-                {
-                    foreach (var obj in (List<XbfObject>)property.Value)
-                        sb.AppendLine(obj.ToString(indentLevel + 2));
-                }
-
+                    sb.Append(collection.ToString(indentLevel + 2));
 
                 sb.AppendFormat(indent + _indent + "</{0}>", propertyName);
                 sb.AppendLine();
