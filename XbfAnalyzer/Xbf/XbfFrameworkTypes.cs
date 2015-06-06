@@ -68,6 +68,7 @@ namespace XbfAnalyzer.Xbf
                 case 0x822C: return "WrapGrid";
                 case 0x8072: return "Style";
                 case 0x80C2: return "DataTemplate";
+                case 0x820D: return "Page";
 
                 // Unknown
                 default: return null;
@@ -79,25 +80,27 @@ namespace XbfAnalyzer.Xbf
             switch (id)
             {
                 // Properties
-                case 0x8310: return "FontSize"; // for a TextBlock ?
-                case 0x8224: return "FontSize"; // for a UserControl ?
-                case 0x8320: return "Text";
-                case 0x81DC: return "Color";
-                case 0x8340: return "Content";
-                case 0x8138: return "Visibility";
-                case 0x8228: return "Foreground";
-                case 0x8287: return "Background";
-                case 0x8199: return "Width"; // Grid
+                case 0x8310: return "FontSize"; // TextBlock
+                case 0x8224: return "FontSize"; // Control
+                case 0x8320: return "Text"; // TextBlock
+                case 0x81DC: return "Color"; // SolidColorBrush
+                case 0x8340: return "Content"; // ContentControl
+                case 0x8138: return "Visibility"; // UIElement
+                case 0x8228: return "Foreground"; // Control
+                case 0x8314: return "Foreground"; // TextBlock
+                case 0x8287: return "Background"; // Panel
+                case 0x821D: return "Background"; // Control
+                case 0x8199: return "Width"; // FrameworkElement
                 case 0x805D: return "MaxWidth"; // ColumnDefinition
                 case 0x805E: return "MinWidth"; // ColumnDefinition
                 case 0x805F: return "Width"; // ColumnDefinition
-                case 0x8189: return "Height"; // Grid
+                case 0x8189: return "Height"; // FrameworkElement
                 case 0x80E3: return "Height"; // RowDefinition
                 case 0x80E4: return "MaxHeight"; // RowDefinition
                 case 0x80E5: return "MinHeight"; // RowDefinition
-                case 0x835A: return "ColumnDefinitions";
-                case 0x835D: return "RowDefinitions";
-                case 0x8288: return "Children"; // Grid
+                case 0x835A: return "ColumnDefinitions"; // Grid
+                case 0x835D: return "RowDefinitions"; // Grid
+                case 0x8288: return "Children"; // Panel
                 case 0x83E7: return "Content"; // UserControl
                 case 0x8146: return "VisualStateManager.VisualStateGroups";
                 case 0x818D: return "Margin"; // FrameworkElement

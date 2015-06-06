@@ -17,8 +17,6 @@ namespace XbfAnalyzer.Xbf
         private readonly List<XbfObjectProperty> _properties = new List<XbfObjectProperty>();
         public List<XbfObjectProperty> Properties { get { return _properties; } }
 
-        private readonly List<XbfObject> _children = new List<XbfObject>();
-
         public override string ToString()
         {
             return ToString(0);

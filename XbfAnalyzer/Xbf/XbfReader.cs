@@ -27,7 +27,7 @@ namespace XbfAnalyzer.Xbf
                 XmlNamespaceTable = ReadTable(reader, r => StringTable[r.ReadInt32()]);
 
                 if (Header.MajorFileVersion >= 2)
-                    ReadNodesV2(reader);
+                    ReadAllNodes(reader);
             }
         }
 
@@ -84,7 +84,7 @@ namespace XbfAnalyzer.Xbf
         private List<Tuple<int, int>> _nodeSectionOffsets;
 
         // XBF v2 node parser functionality is mostly based on analysis of XBF v2.1 files. There are probably a lot of mistakes here!
-        private void ReadNodesV2(BinaryReaderEx reader)
+        private void ReadAllNodes(BinaryReaderEx reader)
         {
             // The first value is an int that indicates how many node sections we have.
             // Each node section comes in two parts: the nodes themselves come first, followed by line/column data (positional data
@@ -154,8 +154,8 @@ namespace XbfAnalyzer.Xbf
 
                         case 0x17: // Root object begin
                             {
-                                rootObject.TypeName = GetTypeNameV2(reader.ReadUInt16());
-                                ReadObjectV2(reader, endPosition);
+                                rootObject.TypeName = GetTypeName(reader.ReadUInt16());
+                                ReadNodes(reader, endPosition);
                             }
                             break;
 
@@ -196,7 +196,7 @@ namespace XbfAnalyzer.Xbf
         private readonly Stack<XbfObject> _objectStack = new Stack<XbfObject>();
         private readonly Stack<XbfObjectCollection> _objectCollectionStack = new Stack<XbfObjectCollection>();
 
-        private void ReadObjectV2(BinaryReaderEx reader, int endPosition)
+        private void ReadNodes(BinaryReaderEx reader, int endPosition)
         {
             byte controlByte;
             while (reader.BaseStream.Position < endPosition)
@@ -208,7 +208,7 @@ namespace XbfAnalyzer.Xbf
                         break;
 
                     case 0x04: // This seems to be another way to specify the class of the root object -- I haven't been able to generate any XBF files that use this control character
-                        _objectStack.Peek().Properties.Add(new XbfObjectProperty("x:Class", GetPropertyValueV2(reader)));
+                        _objectStack.Peek().Properties.Add(new XbfObjectProperty("x:Class", GetPropertyValue(reader)));
                         break;
 
                     case 0x0C: // Connection
@@ -218,25 +218,25 @@ namespace XbfAnalyzer.Xbf
                         // Each object that needs to be connected to something has a unique ID indicated in this section.
 
                         // Connection ID
-                        _objectStack.Peek().ConnectionID = (int)GetPropertyValueV2(reader);
+                        _objectStack.Peek().ConnectionID = (int)GetPropertyValue(reader);
                         break;
 
                     case 0x0D: // x:Name
                         if (_objectStack.Peek().Name != null)
                             throw new Exception("Object already has a Name value");
-                        _objectStack.Peek().Name = GetPropertyValueV2(reader).ToString();
+                        _objectStack.Peek().Name = GetPropertyValue(reader).ToString();
                         break;
 
                     case 0x0E: // x:Uid
                         if (_objectStack.Peek().Uid != null)
                             throw new Exception("Object already as a Uid value");
-                        _objectStack.Peek().Uid = GetPropertyValueV2(reader).ToString();
+                        _objectStack.Peek().Uid = GetPropertyValue(reader).ToString();
                         break;
 
                     case 0x11: // DataTemplate
                         {
                             // TODO: I think the first value is a property name, but content for DataTemplates is set directly -- will need to just display it inside the object
-                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                            string propertyName = GetPropertyName(reader.ReadUInt16());
                             int nodeSection = reader.Read7BitEncodedInt();
                             reader.ReadBytes(2); // TODO
 
@@ -248,7 +248,7 @@ namespace XbfAnalyzer.Xbf
                             reader.BaseStream.Position = newPosition;
 
                             // Read the value
-                            ReadObjectV2(reader, newEndPosition);
+                            ReadNodes(reader, newEndPosition);
 
                             // Return the reader to the original position
                             reader.BaseStream.Position = originalPosition;
@@ -262,16 +262,16 @@ namespace XbfAnalyzer.Xbf
                     case 0x1A: // Property begin
                     case 0x1B: // Property begin (not sure what the difference from 0x1A is)
                         {
-                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
-                            object propertyValue = GetPropertyValueV2(reader);
+                            string propertyName = GetPropertyName(reader.ReadUInt16());
+                            object propertyValue = GetPropertyValue(reader);
                             _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
                         }
                         break;
 
                     case 0x1D: // Style
                         {
-                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
-                            string targetTypeName = GetTypeNameV2(reader.ReadUInt16());
+                            string propertyName = GetPropertyName(reader.ReadUInt16());
+                            string targetTypeName = GetTypeName(reader.ReadUInt16());
 
                             var collection = new XbfObjectCollection();
                             _objectStack.Peek().Properties.Add(new XbfObjectProperty("TargetType", targetTypeName));
@@ -282,8 +282,8 @@ namespace XbfAnalyzer.Xbf
 
                     case 0x1E: // StaticResource
                         {
-                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
-                            object propertyValue = GetPropertyValueV2(reader);
+                            string propertyName = GetPropertyName(reader.ReadUInt16());
+                            object propertyValue = GetPropertyValue(reader);
                             propertyValue = string.Format("{{StaticResource {0}}}", propertyValue);
                             _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
                         }
@@ -291,8 +291,8 @@ namespace XbfAnalyzer.Xbf
 
                     case 0x24: // ThemeResource
                         {
-                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
-                            object propertyValue = GetPropertyValueV2(reader);
+                            string propertyName = GetPropertyName(reader.ReadUInt16());
+                            object propertyValue = GetPropertyValue(reader);
                             propertyValue = string.Format("{{ThemeResource {0}}}", propertyValue);
                             _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
                         }
@@ -300,7 +300,7 @@ namespace XbfAnalyzer.Xbf
 
                     case 0x13: // Object collection begin
                         {
-                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                            string propertyName = GetPropertyName(reader.ReadUInt16());
                             var collection = new XbfObjectCollection();
                             _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, collection));
                             _objectCollectionStack.Push(collection);
@@ -311,7 +311,7 @@ namespace XbfAnalyzer.Xbf
                         {
                             // We are starting a new object inside of the current object. It will be applied as a property of the current object.
                             var subObj = new XbfObject();
-                            subObj.TypeName = GetTypeNameV2(reader.ReadUInt16());
+                            subObj.TypeName = GetTypeName(reader.ReadUInt16());
                             _objectStack.Push(subObj);
                         }
                         break;
@@ -322,7 +322,7 @@ namespace XbfAnalyzer.Xbf
                     case 0x07: // Add the new object as a property of the current object
                     case 0x20: // Same as 0x07, but this seems to occur when the object is a {Binding} value
                         {
-                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                            string propertyName = GetPropertyName(reader.ReadUInt16());
                             var subObj = _objectStack.Pop();
                             _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, subObj));
                         }
@@ -340,7 +340,7 @@ namespace XbfAnalyzer.Xbf
                         {
                             var obj = _objectStack.Pop();
                             // Note: technically the key is a property of the collection rather than the object itself, but for simplicity (and display purposes) we're just adding it to the object.
-                            obj.Key = GetPropertyValueV2(reader).ToString();
+                            obj.Key = GetPropertyValue(reader).ToString();
                             _objectCollectionStack.Peek().Add(obj);
                         }
                         break;
@@ -348,8 +348,8 @@ namespace XbfAnalyzer.Xbf
                     case 0x15: // Literal value (x:Int32, x:String, etc.)
                         {
                             XbfObject obj = new XbfObject();
-                            obj.TypeName = GetTypeNameV2(reader.ReadUInt16());
-                            object value = GetPropertyValueV2(reader);
+                            obj.TypeName = GetTypeName(reader.ReadUInt16());
+                            object value = GetPropertyValue(reader);
                             obj.Properties.Add(new XbfObjectProperty("Value", value)); // TODO: This isn't really correct since the value for these types just appears in the object body
                             _objectStack.Push(obj);
                         }
@@ -391,10 +391,10 @@ namespace XbfAnalyzer.Xbf
                                     {
                                         int valueType = reader.ReadByte();
 
-                                        var propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                                        var propertyName = GetPropertyName(reader.ReadUInt16());
                                         object propertyValue = null;
                                         if (valueType == 0x30)
-                                            propertyValue = GetPropertyValueV2(reader);
+                                            propertyValue = GetPropertyValue(reader);
                                         else
                                             reader.Read7BitEncodedInt(); // Secondary node stream offset for this setter's value
                                         var setter = new XbfObject();
@@ -417,7 +417,7 @@ namespace XbfAnalyzer.Xbf
                             reader.BaseStream.Position = newPosition;
 
                             // Read the nodes from the specified position
-                            ReadObjectV2(reader, newEndPosition);
+                            ReadNodes(reader, newEndPosition);
 
                             // Return to the original position
                             reader.BaseStream.Position = originalPosition;
@@ -551,27 +551,27 @@ namespace XbfAnalyzer.Xbf
             // These could be added to the result, but we already have them there from parsing the specified node section.
         }
 
-        private string GetTypeNameV2(int id)
+        private string GetTypeName(int id)
         {
             if (id < TypeTable.Length)
                 return TypeTable[id].Name;
             return XbfFrameworkTypes.GetNameForTypeID(id) ?? string.Format("UnknownType0x{0:X4}", id);
         }
 
-        private string GetPropertyNameV2(int id)
+        private string GetPropertyName(int id)
         {
             if (id < PropertyTable.Length)
                 return PropertyTable[id].Name;
             return XbfFrameworkTypes.GetNameForPropertyID(id) ?? string.Format("UnknownProperty0x{0:X4}", id);
         }
 
-        private string GetEnumerationValueV2(int enumID, int enumValue)
+        private string GetEnumerationValue(int enumID, int enumValue)
         {
             // TODO
-            return string.Format("Enum(0x{0:X4})Value({1})", enumID, enumValue);
+            return string.Format("(Enum0x{0:X4}){1}", enumID, enumValue);
         }
 
-        private object GetPropertyValueV2(BinaryReader reader)
+        private object GetPropertyValue(BinaryReader reader)
         {
             byte valueType = reader.ReadByte();
             switch (valueType)
@@ -635,7 +635,7 @@ namespace XbfAnalyzer.Xbf
                 case 0x0B: // Enumeration
                     int enumID = reader.ReadUInt16();
                     int enumValue = reader.ReadInt32();
-                    return GetEnumerationValueV2(enumID, enumValue);
+                    return GetEnumerationValue(enumID, enumValue);
 
                 default:
                     throw new Exception(string.Format("Unrecognized value type 0x{0:X2}", valueType));

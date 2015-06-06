@@ -130,7 +130,7 @@ namespace XbfAnalyzer
                 }
                 else
                 {
-                    LogMessage("XBF nodes:");
+                    LogMessage("XAML objects:");
                     if (!string.IsNullOrEmpty(xbf.NodeParserError))
                     {
                         LogMessage(xbf.NodeParserError);
