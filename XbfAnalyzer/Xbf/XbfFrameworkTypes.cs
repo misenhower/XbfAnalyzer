@@ -66,6 +66,7 @@ namespace XbfAnalyzer.Xbf
                 case 0x822B: return "VirtualizingStackPanel";
                 case 0x81EE: return "WebView";
                 case 0x822C: return "WrapGrid";
+                case 0x8072: return "Style";
 
                 // Unknown
                 default: return null;
@@ -110,6 +111,7 @@ namespace XbfAnalyzer.Xbf
                 case 0x8619: return "MinWindowWidth"; // AdaptiveTrigger
                 case 0x86A6: return "IsActive"; // StateTrigger
                 case 0x8194: return "Resources"; // FrameworkElement
+                case 0x80F7: return "Setters"; // Style
 
                 // Unknown
                 default: return null;

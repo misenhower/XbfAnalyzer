@@ -219,6 +219,17 @@ namespace XbfAnalyzer.Xbf
                         }
                         break;
 
+                    case 0x1D: // Style
+                        {
+                            string propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                            string targetTypeName = GetTypeNameV2(reader.ReadUInt16());
+
+                            var objects = ReadObjectCollectionV2(reader, endPosition, false);
+                            obj.Properties.Add(new XbfObjectProperty("TargetType", targetTypeName));
+                            obj.Properties.Add(new XbfObjectProperty(propertyName, objects));
+                        }
+                        break;
+
                     case 0x1E: // StaticResource
                         {
                             string propertyName = GetPropertyNameV2(reader.ReadUInt16());
@@ -327,24 +338,27 @@ namespace XbfAnalyzer.Xbf
                             {
                                 controlByte = reader.ReadByte();
 
-                                if (controlByte == 0x01) // Not sure what this means -- seems to appear at the beginning of visual state sections
+                                if (controlByte == 0x01) // Not sure what this means -- seems to appear at the beginning of visual state sections (style sections, too)
                                     continue;
 
                                 if (controlByte == 0x13)
                                 {
                                     // This will be the property name we're getting values for. We already know what this value is (it should have appeared already, after the 0x14 that signaled the beginning of this collection).
                                     reader.ReadUInt16();
+
+                                    // Get the values
+                                    var objectCollection = ReadObjectCollectionV2(reader, newEndPosition, true);
+
+                                    // Add the objects to our list. (We could probably just replace our list since it should be empty.)
+                                    result.AddRange(objectCollection);
                                     break;
                                 }
 
+                                if (controlByte == 0x02) // We're done? <Style> sections seem to lead to node groups with two bytes: 0x0102
+                                    break;
+
                                 throw new Exception(string.Format("Unexpected control byte 0x{0:X2} in secondary node section", controlByte));
                             }
-
-                            // Get the values
-                            var objectCollection = ReadObjectCollectionV2(reader, newEndPosition, true);
-
-                            // Add the objects to our list. (We could probably just replace our list since it should be empty.)
-                            result.AddRange(objectCollection);
 
                             // Return to the original position
                             reader.BaseStream.Position = originalPosition;
@@ -359,15 +373,32 @@ namespace XbfAnalyzer.Xbf
 
                             switch (type)
                             {
-                                case 2: // Styles
-                                    SkipStyleBytes(reader);
-                                    break;
                                 case 371: // Objects
                                     SkipObjectBytes(reader);
                                     break;
+
                                 case 5: // Visual states
                                     SkipVisualStateBytes(reader);
                                     break;
+
+                                case 2: // Styles
+                                    // For the other types we can just skip the remaining bytes in this section.
+                                    // Styles seem to be different: their secondary node sections don't appear to contain any actual data.
+                                    int styleCount = reader.Read7BitEncodedInt();
+                                    for (int i = 0; i < styleCount; i++)
+                                    {
+                                        reader.ReadByte(); // TODO
+
+                                        var propertyName = GetPropertyNameV2(reader.ReadUInt16());
+                                        var propertyValue = GetPropertyValueV2(reader);
+                                        var obj = new XbfObject();
+                                        obj.TypeName = "Setter";
+                                        obj.Properties.Add(new XbfObjectProperty("Property", propertyName));
+                                        obj.Properties.Add(new XbfObjectProperty("Value", propertyValue));
+                                        result.Add(obj);
+                                    }
+                                    return result;
+
                                 default:
                                     throw new Exception(string.Format("Unknown node type {0} while parsing referenced code section", type));
                             }
@@ -400,11 +431,6 @@ namespace XbfAnalyzer.Xbf
 
             Debug.WriteLine("WARNING: ignoring early end-of-stream in secondary node section at position 0x{0:X}", reader.BaseStream.Position);
             return result;
-        }
-
-        private void SkipStyleBytes(BinaryReaderEx reader)
-        {
-            throw new NotImplementedException();
         }
 
         private void SkipObjectBytes(BinaryReaderEx reader)
