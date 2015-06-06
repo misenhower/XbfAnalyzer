@@ -82,6 +82,7 @@ namespace XbfAnalyzer.Xbf
 
         private int _firstNodeSectionPosition;
         private List<Tuple<int, int>> _nodeSectionOffsets;
+        private Dictionary<string, string> _namespacePrefixes = new Dictionary<string, string>();
 
         // XBF v2 node parser functionality is mostly based on analysis of XBF v2.1 files. There are probably a lot of mistakes here!
         private void ReadAllNodes(BinaryReaderEx reader)
@@ -138,6 +139,7 @@ namespace XbfAnalyzer.Xbf
                             {
                                 string namespaceName = XmlNamespaceTable[reader.ReadUInt16()];
                                 string prefix = ReadString(reader);
+                                _namespacePrefixes[namespaceName] = prefix;
                                 if (!string.IsNullOrEmpty(prefix))
                                     prefix = "xmlns:" + prefix;
                                 else
@@ -553,16 +555,24 @@ namespace XbfAnalyzer.Xbf
 
         private string GetTypeName(int id)
         {
-            if (id < TypeTable.Length)
-                return TypeTable[id].Name;
-            return XbfFrameworkTypes.GetNameForTypeID(id) ?? string.Format("UnknownType0x{0:X4}", id);
+            // If the highest bit is set, this is a standard framework type
+            if ((id & 0x8000) != 0)
+                return XbfFrameworkTypes.GetNameForTypeID(id) ?? string.Format("UnknownType0x{0:X4}", id);
+
+            var type = TypeTable[id];
+            var namespaceName = "using:" + type.Namespace.Name;
+            if (_namespacePrefixes.ContainsKey(namespaceName))
+                return _namespacePrefixes[namespaceName] + ":" + type.Name;
+            return type.Name;
         }
 
         private string GetPropertyName(int id)
         {
-            if (id < PropertyTable.Length)
-                return PropertyTable[id].Name;
-            return XbfFrameworkTypes.GetNameForPropertyID(id) ?? string.Format("UnknownProperty0x{0:X4}", id);
+            // If the highest bit is set, this is a standard framework property
+            if ((id & 0x8000) != 0)
+                return XbfFrameworkTypes.GetNameForPropertyID(id) ?? string.Format("UnknownProperty0x{0:X4}", id);
+
+            return PropertyTable[id].Name;
         }
 
         private string GetEnumerationValue(int enumID, int enumValue)
