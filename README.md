@@ -25,3 +25,4 @@ They don't appear to be in any particular order -- the IDs are not necessarily a
 
 Currently, I am just using a list of the IDs I've found for some of the more common controls and their properties.
 This list is locted in `XbfFrameworkTypes.cs`.
+Unknown type/property IDs will be displayed as `UnknownType0x8000` or `UnknownProperty0x8000`.
