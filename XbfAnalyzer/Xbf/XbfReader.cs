@@ -557,7 +557,7 @@ namespace XbfAnalyzer.Xbf
         {
             // If the highest bit is set, this is a standard framework type
             if ((id & 0x8000) != 0)
-                return XbfFrameworkTypes.GetNameForTypeID(id) ?? string.Format("UnknownType0x{0:X4}", id);
+                return XbfFrameworkTypes.GetNameForTypeID(id & ~0x8000) ?? string.Format("UnknownType0x{0:X4}", id);
 
             var type = TypeTable[id];
             var namespaceName = "using:" + type.Namespace.Name;
@@ -570,15 +570,14 @@ namespace XbfAnalyzer.Xbf
         {
             // If the highest bit is set, this is a standard framework property
             if ((id & 0x8000) != 0)
-                return XbfFrameworkTypes.GetNameForPropertyID(id) ?? string.Format("UnknownProperty0x{0:X4}", id);
+                return XbfFrameworkTypes.GetNameForPropertyID(id & ~0x8000) ?? string.Format("UnknownProperty0x{0:X4}", id);
 
             return PropertyTable[id].Name;
         }
 
         private string GetEnumerationValue(int enumID, int enumValue)
         {
-            // TODO
-            return string.Format("(Enum0x{0:X4}){1}", enumID, enumValue);
+            return XbfFrameworkTypes.GetNameForEnumValue(enumID, enumValue) ?? string.Format("(Enum0x{0:X4}){1}", enumID, enumValue);
         }
 
         private object GetPropertyValue(BinaryReader reader)
