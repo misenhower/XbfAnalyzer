@@ -20,9 +20,4 @@ XBF v2 files have a completely different node stream format than v1 files.
 Unlike v1, XBF v2 files do not include the names and properties of standard controls (e.g., Grid, Button, TextBlock, etc.) in the header.
 Instead, these controls and their properties appear to have unique, hardcoded ID numbers.
 
-I haven't been able to find a source for mapping all of the controls to their specific ID numbers, so if anyone finds more information about that please let me know.
-They don't appear to be in any particular order -- the IDs are not necessarily alphabetical by class or namespace, etc.
-
-Currently, I am just using a list of the IDs I've found for some of the more common controls and their properties.
-This list is locted in `XbfFrameworkTypes.cs`.
-Unknown type/property IDs will be displayed as `UnknownType0x8000` or `UnknownProperty0x8000`.
+Special thanks to [Christoph Hausner](https://github.com/chausner) for discovering the complete type, property, and enumeration mappings in GenXbf.dll from the Windows 10 Anniversary Update SDK.
