@@ -42,7 +42,10 @@ namespace XbfAnalyzer.Xbf
                 return name;
             else
             {
-                // enum value could be a flag combination
+                if (value == 0)
+                    return null;
+                
+                // represent enum value as a combination of flags
                 List<string> names = new List<string>();
 
                 int remainingValue = value;
