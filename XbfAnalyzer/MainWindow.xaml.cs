@@ -122,40 +122,50 @@ namespace XbfAnalyzer
                     LogHexAddressMessage(i, xbf.XmlNamespaceTable[i]);
                 LogMessage();
 
+                // Node section table
+                LogLine();
+                LogMessage("Node section table:");
+                for (int i = 0; i < xbf.NodeSectionTable.Length; i++)
+                    LogHexAddressMessage(i, "Node offset: {0} (0x{0:X}) Positional offset: {1} (0x{1:X})", xbf.NodeSectionTable[i].NodeOffset, xbf.NodeSectionTable[i].PositionalOffset);
+                LogMessage();
+
                 // Nodes
                 LogLine();
                 if (xbf.Header.MajorFileVersion < 2)
-                {
                     LogMessage("Parsing XBF v1 nodes is not currently supported.");
-                }
                 else
                 {
-                    LogMessage("XAML objects:");
-                    if (!string.IsNullOrEmpty(xbf.NodeParserError))
-                    {
-                        LogMessage(xbf.NodeParserError);
-                        LogMessage();
-                        LogMessage("Partial node results:");
-                    }
-                    LogMessage(xbf.NodeResultString);
+                    string xaml = xbf.RootObject.ToString();
+                    LogMessage("XAML objects:");              
+                    LogMessage(xaml);
                 }
             }
             catch (Exception ex)
             {
                 LogMessage("Error: " + ex.ToString());
             }
+
+            ShowLog();
         }
 
         #region Message Logging
 
+        private StringBuilder log = new StringBuilder();
+
+        private void ShowLog()
+        {
+            OutputTextBox.Text = log.ToString();
+        }
+
         private void ClearLog()
         {
+            log.Clear();
             OutputTextBox.Text = null;
         }
 
         private void LogMessage(string message = "")
         {
-            OutputTextBox.Text += message + Environment.NewLine;
+            log.AppendLine(message);
         }
 
         private void LogMessage(string format, params object[] args)

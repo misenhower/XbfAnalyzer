@@ -1,21 +1,32 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Media;
 
 namespace XbfAnalyzer.Xbf
 {
     public class XbfReader
     {
+        public XbfHeader Header { get; private set; }
+        public string[] StringTable { get; private set; }
+        public XbfAssembly[] AssemblyTable { get; private set; }
+        public XbfTypeNamespace[] TypeNamespaceTable { get; private set; }
+        public XbfType[] TypeTable { get; private set; }
+        public XbfProperty[] PropertyTable { get; private set; }
+        public string[] XmlNamespaceTable { get; private set; }
+        public XbfNodeSection[] NodeSectionTable { get; private set; }
+        public XbfObject RootObject { get; private set; }
+
+        private int _firstNodeSectionPosition;
+        private Dictionary<string, string> _namespacePrefixes = new Dictionary<string, string>();
+        private Stack<XbfObject> _rootObjectStack = new Stack<XbfObject>();
+        private Stack<XbfObject> _objectStack = new Stack<XbfObject>();
+        private Stack<XbfObjectCollection> _objectCollectionStack = new Stack<XbfObjectCollection>();
+
         public XbfReader(string path)
         {
-            _path = path;
-
-            using (var fileStream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var fileStream = File.OpenRead(path))
             using (var reader = new BinaryReaderEx(fileStream, Encoding.Unicode))
             {
                 Header = new XbfHeader(reader);
@@ -25,23 +36,29 @@ namespace XbfAnalyzer.Xbf
                 TypeTable = ReadTable(reader, r => new XbfType(this, r));
                 PropertyTable = ReadTable(reader, r => new XbfProperty(this, r));
                 XmlNamespaceTable = ReadTable(reader, r => StringTable[r.ReadInt32()]);
+                NodeSectionTable = ReadTable(reader, r => new XbfNodeSection(this, reader));
+
+                // Each node section comes in two parts: the nodes themselves come first, followed by line/column data (positional data
+                // which indicates where the objects were located in the source XAML file).
+                // For each node section, there will be two offset numbers: one for the nodes, and one for the positional data.
+                //
+                // There seem to be a few situations that trigger a separate node section to be generated, including:
+                // - Visual state data (VisualStateGroups, VisualStates, etc.) seem to always generate a separate section.
+                //   Some visual state information is included in the primary node stream (after control character 0x0F) but fully-expanded
+                //   objects are only available in the secondary node streams (one per object that has VisualStateGroups defined).
+                // - Resource collections (i.e., groups of objects with x:Key values) seem generate a separate section when they have more than one item.
+                //   Different types of resources seem to generate multiple resource collections for the same object.
+                //   For example, Brush resources are listed separately from Style resources.
+                //
+                // Note that secondary node sections can also contain references to other node sections as well.
+
+                // We are now at the position in the stream of the first actual node data. We'll need this position later.
+                _firstNodeSectionPosition = (int)reader.BaseStream.Position;
 
                 if (Header.MajorFileVersion >= 2)
-                    ReadAllNodes(reader);
+                    RootObject = ReadRootNodeSection(reader);
             }
         }
-
-        private readonly string _path;
-        public XbfHeader Header { get; private set; }
-        public string[] StringTable { get; private set; }
-        public XbfAssembly[] AssemblyTable { get; private set; }
-        public XbfTypeNamespace[] TypeNamespaceTable { get; private set; }
-        public XbfType[] TypeTable { get; private set; }
-        public XbfProperty[] PropertyTable { get; private set; }
-        public string[] XmlNamespaceTable { get; private set; }
-
-        public string NodeResultString { get; private set; }
-        public string NodeParserError { get; private set; }
 
         private string ReadString(BinaryReader reader)
         {
@@ -59,12 +76,12 @@ namespace XbfAnalyzer.Xbf
             {
                 stringTable[i] = ReadString(reader);
 
-                // XBF v2 files appear to have two extra bytes after each string.
-                // TODO: Determine if these bytes have any purpose.
+                // XBF v2 files have two extra null bytes after each string.
                 if (isXbfV2)
-                    reader.ReadBytes(2);
+                    if (reader.ReadUInt16() != 0)
+                        throw new InvalidDataException("Unexpected value");
             }
-
+            
             StringTable = stringTable;
         }
 
@@ -79,60 +96,49 @@ namespace XbfAnalyzer.Xbf
             return result;
         }
 
-
-        private int _firstNodeSectionPosition;
-        private List<Tuple<int, int>> _nodeSectionOffsets;
-        private Dictionary<string, string> _namespacePrefixes = new Dictionary<string, string>();
-
-        // XBF v2 node parser functionality is mostly based on analysis of XBF v2.1 files. There are probably a lot of mistakes here!
-        private void ReadAllNodes(BinaryReaderEx reader)
+        private XbfObject ReadRootNodeSection(BinaryReaderEx reader)
         {
-            // The first value is an int that indicates how many node sections we have.
-            // Each node section comes in two parts: the nodes themselves come first, followed by line/column data (positional data
-            // which indicates where the objects were located in the source XAML file).
-            // For each node section, there will be two offset numbers: one for the nodes, and one for the positional data.
-            //
-            // There seem to be a few situations that trigger a separate node section to be generated, including:
-            // - Visual state data (VisualStateGroups, VisualStates, etc.) seem to always generate a separate section.
-            //   Some visual state information is included in the primary node stream (after control character 0x0F) but fully-expanded
-            //   objects are only available in the secondary node streams (one per object that has VisualStateGroups defined).
-            // - Resource collections (i.e., groups of objects with x:Key values) seem generate a separate section when they have more than one item.
-            //   Different types of resources seem to generate multiple resource collections for the same object.
-            //   For example, Brush resources are listed separately from Style resources.
-            //
-            // Note that secondary node sections can also contain references to other node sections as well.
+            if (Header.MajorFileVersion != 2)
+                throw new NotSupportedException("Only XBF v2 files are supported.");
 
-            // Get the number of node sections
-            int nodeSectionCount = reader.ReadInt32();
+            int startPosition = _firstNodeSectionPosition + NodeSectionTable[0].NodeOffset;
+            int endPosition = _firstNodeSectionPosition + NodeSectionTable[0].PositionalOffset;
 
-            // Get the offsets for each node section
-            _nodeSectionOffsets = new List<Tuple<int, int>>(nodeSectionCount);
-            int nodeOffset, posOffset;
-            for (int i = 0; i < nodeSectionCount; i++)
-            {
-                nodeOffset = reader.ReadInt32();
-                posOffset = reader.ReadInt32();
-                _nodeSectionOffsets.Add(new Tuple<int, int>(nodeOffset, posOffset));
-            }
+            reader.BaseStream.Seek(startPosition, SeekOrigin.Begin);
 
-            // We are now at the position in the stream of the first actual node data. We'll need this position later.
-            _firstNodeSectionPosition = (int)reader.BaseStream.Position;
+            _rootObjectStack.Clear();
+            _objectStack.Clear();
+            _objectCollectionStack.Clear();
 
-            PrintNodeSectionBytes(reader);
+            ReadRoot(reader, endPosition);
+            
+            if (_objectStack.Count != 1)
+                throw new InvalidDataException("_objectStack corrupted");
 
+            if (_objectCollectionStack.Count != 0)
+                throw new InvalidDataException("_objectCollectionStack corrupted");
+
+            XbfObject rootObject = _objectStack.Pop();
+
+            return rootObject;
+        }
+
+        private void ReadRoot(BinaryReaderEx reader, int endPosition)
+        {
             // The first node section contains the primary XAML data (and the root XAML object)
             XbfObject rootObject = new XbfObject();
+            _rootObjectStack.Push(rootObject);
             _objectStack.Push(rootObject);
-            int endPosition = _firstNodeSectionPosition + _nodeSectionOffsets[0].Item2;
+
+            _objectCollectionStack.Push(rootObject.Children);
 
             try
             {
                 // Read the node bytes
-                byte controlByte;
                 while (reader.BaseStream.Position < endPosition)
                 {
-                    controlByte = reader.ReadByte();
-                    switch (controlByte)
+                    byte nodeType = reader.ReadByte();
+                    switch (nodeType)
                     {
                         case 0x12: // This usually appears to be the first byte encountered. I'm not sure what the difference between 0x12 and 0x03 is.
                         case 0x03: // Root node namespace declaration
@@ -148,9 +154,10 @@ namespace XbfAnalyzer.Xbf
                             }
                             break;
 
-                        case 0x0B: // Indicates the class of the root object (i.e., x:Class)
+                        case 0x0B: // Indicates the class of the root object (i.e. x:Class)
                             {
-                                rootObject.Properties.Add(new XbfObjectProperty("x:Class", ReadString(reader)));
+                                string className = ReadString(reader);
+                                rootObject.Properties.Add(new XbfObjectProperty("x:Class", className));
                             }
                             break;
 
@@ -158,59 +165,61 @@ namespace XbfAnalyzer.Xbf
                             {
                                 rootObject.TypeName = GetTypeName(reader.ReadUInt16());
                                 ReadNodes(reader, endPosition);
+                                goto exitLoop;
                             }
-                            break;
 
                         default:
-                            throw new Exception(string.Format("Unrecognized character 0x{0:X2} in node stream", controlByte));
+                            throw new InvalidDataException(string.Format("Unrecognized character 0x{0:X2} in node stream", nodeType));
                     }
                 }
             }
             catch (Exception e)
             {
-                NodeParserError = string.Format("Error parsing node stream at file position {0} (0x{0:X}) (node start position was: {1} (0x{1:X}))" + Environment.NewLine, reader.BaseStream.Position - 1, _firstNodeSectionPosition) + e.ToString();
+                throw new InvalidDataException(string.Format("Error parsing node stream at file position {0} (0x{0:X}) (node start position was: {1} (0x{1:X}))" + Environment.NewLine, reader.BaseStream.Position - 1, _firstNodeSectionPosition) + e.ToString(), e);
             }
 
-            if (rootObject != null)
-                NodeResultString = rootObject.ToString();
+            exitLoop:
+
+            if (_rootObjectStack.Pop() != rootObject)
+                throw new InvalidDataException("_rootObjectStack corrupted");
+
+            if (_objectStack.Peek() != rootObject)
+                throw new InvalidDataException("_objectStack corrupted");
         }
 
-        private void PrintNodeSectionBytes(BinaryReaderEx reader)
+        private void ReadNodes(BinaryReaderEx reader, int endPosition, bool readSingleObject = false, bool readSingleNode = false)
         {
-            long originalPosition = reader.BaseStream.Position;
-
-            Debug.WriteLine("Node sections for file: " + _path);
-
-            for (int i = 0; i < _nodeSectionOffsets.Count; i++)
-            {
-                var sectionOffset = _nodeSectionOffsets[i];
-                int startPosition = _firstNodeSectionPosition + sectionOffset.Item1;
-                int length = sectionOffset.Item2 - sectionOffset.Item1;
-                reader.BaseStream.Position = startPosition;
-                var bytes = reader.ReadBytes(length);
-                Debug.WriteLine("Node section {0}, length: {1} (0x{1:X}), file positions: {2}-{3} (0x{2:X}-0x{3:X}):", i, length, startPosition, startPosition + length - 1);
-                Debug.WriteLine(string.Join(" ", bytes.Select(b => b.ToString("X2"))));
-            }
-
-            reader.BaseStream.Position = originalPosition;
-        }
-
-        private readonly Stack<XbfObject> _objectStack = new Stack<XbfObject>();
-        private readonly Stack<XbfObjectCollection> _objectCollectionStack = new Stack<XbfObjectCollection>();
-
-        private void ReadNodes(BinaryReaderEx reader, int endPosition)
-        {
-            byte controlByte;
+            XbfObject singleObject = null;
             while (reader.BaseStream.Position < endPosition)
             {
-                controlByte = reader.ReadByte();
-                switch (controlByte)
+                byte nodeType = reader.ReadByte();
+                switch (nodeType)
                 {
-                    case 0x01: // This seems to occur at the beginning of some secondary node sections -- not sure what it means
+                    case 0x01: // This only occurs at the beginning of some secondary node sections -- not sure what it means
                         break;
 
-                    case 0x04: // This seems to be another way to specify the class of the root object -- I haven't been able to generate any XBF files that use this control character
-                        _objectStack.Peek().Properties.Add(new XbfObjectProperty("x:Class", GetPropertyValue(reader)));
+                    case 0x04: 
+                        // This seems to have at least four different interpretations -- not sure how to properly decide which one is correct
+                        // The logic below seems to work but is most definitely not the correct way
+
+                        // If the following condition is true, we are in a collection that was started with collectionbegin,
+                        // making this node likely to be a verbatim string.
+                        if (_objectCollectionStack.Peek() != _objectStack.Peek().Children) // Verbatim text, appears in TextBlock.Inlines
+                        {
+                            object text = GetPropertyValue(reader);
+                            var obj = new XbfObject() { TypeName = "Verbatim" }; // For simplicity, use a fake Verbatim object to store the text
+                            obj.Properties.Add(new XbfObjectProperty("Value", text));
+                            _objectStack.Push(obj);
+                        }
+                        else if (_objectStack.Peek() == _rootObjectStack.Peek()) // Class of root object
+                        {
+                            object cl = GetPropertyValue(reader);
+                            _objectStack.Peek().Properties.Add(new XbfObjectProperty("x:Class", cl));
+                        }
+                        else // Values encountered here in some files are class modifiers ("private", "internal", "public") or event handler names (e.g. "CancelButton_Click")
+                        {
+                            object val = GetPropertyValue(reader);
+                        }
                         break;
 
                     case 0x0C: // Connection
@@ -224,45 +233,19 @@ namespace XbfAnalyzer.Xbf
                         break;
 
                     case 0x0D: // x:Name
-                        if (_objectStack.Peek().Name != null)
-                            throw new Exception("Object already has a Name value");
                         _objectStack.Peek().Name = GetPropertyValue(reader).ToString();
                         break;
 
                     case 0x0E: // x:Uid
-                        if (_objectStack.Peek().Uid != null)
-                            throw new Exception("Object already as a Uid value");
                         _objectStack.Peek().Uid = GetPropertyValue(reader).ToString();
                         break;
 
                     case 0x11: // DataTemplate
-                        {
-                            // TODO: I think the first value is a property name, but content for DataTemplates is set directly -- will need to just display it inside the object
-                            string propertyName = GetPropertyName(reader.ReadUInt16());
-                            int nodeSection = reader.Read7BitEncodedInt();
-                            reader.ReadBytes(2); // TODO
-
-                            // Move the reader to the specified node section's position
-                            long originalPosition = reader.BaseStream.Position;
-                            int newPosition = _firstNodeSectionPosition + _nodeSectionOffsets[nodeSection].Item1;
-                            int newEndPosition = _firstNodeSectionPosition + _nodeSectionOffsets[nodeSection].Item2;
-
-                            reader.BaseStream.Position = newPosition;
-
-                            // Read the value
-                            ReadNodes(reader, newEndPosition);
-
-                            // Return the reader to the original position
-                            reader.BaseStream.Position = originalPosition;
-
-                            // Add the object we found as a property
-                            var obj = _objectStack.Pop();
-                            _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, obj));
-                        }
+                        ReadDataTemplate(reader);
                         break;
 
-                    case 0x1A: // Property begin
-                    case 0x1B: // Property begin (not sure what the difference from 0x1A is)
+                    case 0x1A: // Property
+                    case 0x1B: // Property (not sure what the difference from 0x1A is)
                         {
                             string propertyName = GetPropertyName(reader.ReadUInt16());
                             object propertyValue = GetPropertyValue(reader);
@@ -272,13 +255,9 @@ namespace XbfAnalyzer.Xbf
 
                     case 0x1D: // Style
                         {
-                            string propertyName = GetPropertyName(reader.ReadUInt16());
+                            string propertyName = GetPropertyName(reader.ReadUInt16()); // Always "TargetType"
                             string targetTypeName = GetTypeName(reader.ReadUInt16());
-
-                            var collection = new XbfObjectCollection();
-                            _objectStack.Peek().Properties.Add(new XbfObjectProperty("TargetType", targetTypeName));
-                            _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, collection));
-                            _objectCollectionStack.Push(collection);
+                            _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, targetTypeName));
                         }
                         break;
 
@@ -291,12 +270,45 @@ namespace XbfAnalyzer.Xbf
                         }
                         break;
 
+                    case 0x1F: // TemplateBinding
+                        {
+                            string propertyName = GetPropertyName(reader.ReadUInt16());
+                            string bindingPath = GetPropertyName(reader.ReadUInt16());
+                            bindingPath = string.Format("{{TemplateBinding {0}}}", bindingPath);
+                            _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, bindingPath));
+                        }
+                        break;
+
                     case 0x24: // ThemeResource
                         {
                             string propertyName = GetPropertyName(reader.ReadUInt16());
                             object propertyValue = GetPropertyValue(reader);
                             propertyValue = string.Format("{{ThemeResource {0}}}", propertyValue);
                             _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, propertyValue));
+                        }
+                        break;
+
+                    case 0x22: // StaticResource object
+                        {
+                            object propertyValue = GetPropertyValue(reader);
+                            var obj = new XbfObject() { TypeName = "StaticResource" };
+                            obj.Properties.Add(new XbfObjectProperty("ResourceKey", propertyValue));
+                            _objectStack.Push(obj);
+
+                            if (readSingleObject)
+                                return;
+                        }
+                        break;
+
+                    case 0x23: // ThemeResource object
+                        {
+                            object propertyValue = GetPropertyValue(reader);
+                            var obj = new XbfObject() { TypeName = "ThemeResource" };
+                            obj.Properties.Add(new XbfObjectProperty("ResourceKey", propertyValue));
+                            _objectStack.Push(obj);
+
+                            if (readSingleObject)
+                                return;
                         }
                         break;
 
@@ -309,20 +321,41 @@ namespace XbfAnalyzer.Xbf
                         }
                         break;
 
+                    case 0x02: // End of collection
+                        // The collection has already been added as a property, so we just need to pop it off the stack
+                        _objectCollectionStack.Pop();
+                        break;
+
                     case 0x14: // Object begin
                         {
                             // We are starting a new object inside of the current object. It will be applied as a property of the current object.
                             var subObj = new XbfObject();
                             subObj.TypeName = GetTypeName(reader.ReadUInt16());
                             _objectStack.Push(subObj);
+
+                            _objectCollectionStack.Push(subObj.Children);
+
+                            if (readSingleObject && singleObject == null)
+                                singleObject = subObj;
                         }
                         break;
 
                     case 0x21: // Object end
+                        // Pop Children collection of ending object off the object collection stack if it had been pushed there earlier
+                        if (_objectCollectionStack.Count > 0 && _objectCollectionStack.Peek() == _objectStack.Peek().Children)
+                            _objectCollectionStack.Pop();
+
+                        // Return if we are supposed to read only a single object and we just reached the end of it
+                        if (readSingleObject && _objectStack.Peek() == singleObject)
+                            return;
+
+                        // Return if we reached the end of a nested root object
+                        if (_objectStack.Peek() == _rootObjectStack.Peek())
+                            return;
                         break;
 
                     case 0x07: // Add the new object as a property of the current object
-                    case 0x20: // Same as 0x07, but this seems to occur when the object is a {Binding} value
+                    case 0x20: // Same as 0x07, but this occurs when the object is a Binding, TemplateBinding, CustomResource, RelativeSource or NullExtension value
                         {
                             string propertyName = GetPropertyName(reader.ReadUInt16());
                             var subObj = _objectStack.Pop();
@@ -347,105 +380,313 @@ namespace XbfAnalyzer.Xbf
                         }
                         break;
 
-                    case 0x15: // Literal value (x:Int32, x:String, etc.)
+                    case 0x15: // Literal value (x:Int32, x:String, etc. and types in Windows.UI.Xaml namespace)
+                    case 0x16: // Literal value of type that is not in Windows.UI.Xaml namespace
                         {
                             XbfObject obj = new XbfObject();
                             obj.TypeName = GetTypeName(reader.ReadUInt16());
                             object value = GetPropertyValue(reader);
                             obj.Properties.Add(new XbfObjectProperty("Value", value)); // TODO: This isn't really correct since the value for these types just appears in the object body
                             _objectStack.Push(obj);
-                        }
-                        break;
 
-                    case 0x02: // End of collection
-                        // The collection has already been added as a property, so we just need to pop it off the stack
-                        _objectCollectionStack.Pop();
+                            if (readSingleObject && singleObject == null)
+                                singleObject = obj;
+                        }
                         break;
 
                     case 0x0F: // Reference to a different node section
-                        {
-                            // The node section we're skipping to
-                            int nodeSection = reader.Read7BitEncodedInt();
+                        ReadNodeSectionReference(reader);
+                        break;
 
-                            // Now we need to determine where this 0x0F section ends.
-                            // All of the data we need is in the specified node section (that we will read from), but we still have to parse the remainder of this 0x0F section to determine how long it is.
+                    case 0x12: // Root objects can be nested
+                    case 0x0B:
+                    case 0x17: 
+                        // Rewind and handle the object in ReadRoot
+                        reader.BaseStream.Seek(-1, SeekOrigin.Current);
+                        ReadRoot(reader, endPosition);
 
-                            reader.ReadBytes(2); // TODO -- I've only seen 0x0000 for these
+                        if (readSingleObject && singleObject == null)
+                            return; // The root object we just read is the single object we are supposed to read
+                        break;
 
-                            // Get the type of nodes contained in this section (?)
-                            int type = reader.Read7BitEncodedInt();
-
-                            switch (type)
-                            {
-                                case 371: // Objects
-                                    SkipObjectBytes(reader);
-                                    break;
-
-                                case 5: // Visual states
-                                    SkipVisualStateBytes(reader);
-                                    break;
-
-                                case 2: // Styles
-                                    // For the other types we can just skip the remaining bytes in this section.
-                                    // Styles seem to be different: their secondary node sections don't appear to contain any actual data.
-                                    int setterCount = reader.Read7BitEncodedInt();
-                                    for (int i = 0; i < setterCount; i++)
-                                    {
-                                        int valueType = reader.ReadByte();
-
-                                        var propertyName = GetPropertyName(reader.ReadUInt16());
-                                        object propertyValue = null;
-                                        if (valueType == 0x30)
-                                            propertyValue = GetPropertyValue(reader);
-                                        else
-                                            reader.Read7BitEncodedInt(); // Secondary node stream offset for this setter's value
-                                        var setter = new XbfObject();
-                                        setter.TypeName = "Setter";
-                                        setter.Properties.Add(new XbfObjectProperty("Property", propertyName));
-                                        setter.Properties.Add(new XbfObjectProperty("Value", propertyValue));
-                                        _objectCollectionStack.Peek().Add(setter);
-                                    }
-                                    break;
-
-                                default:
-                                    throw new Exception(string.Format("Unknown node type {0} while parsing referenced code section", type));
-                            }
-
-                            // Save the current position and skip ahead to the new position
-                            long originalPosition = reader.BaseStream.Position;
-                            int newPosition = _firstNodeSectionPosition + _nodeSectionOffsets[nodeSection].Item1;
-                            int newEndPosition = _firstNodeSectionPosition + _nodeSectionOffsets[nodeSection].Item2;
-
-                            reader.BaseStream.Position = newPosition;
-
-                            // Read the nodes from the specified position
-                            ReadNodes(reader, newEndPosition);
-
-                            // Return to the original position
-                            reader.BaseStream.Position = originalPosition;
-                        }
+                    case 0x8B: // Unknown purpose, only encountered in one file
+                        _objectStack.Pop();
                         break;
 
                     default:
-                        throw new Exception(string.Format("Unrecognized character 0x{0:X2} while parsing object", controlByte));
+                        throw new InvalidDataException(string.Format("Unrecognized character 0x{0:X2} while parsing object", nodeType));
+                }
+
+                if (readSingleNode)
+                    break;
+            }
+        }
+
+        private void ReadNodeSectionReference(BinaryReaderEx reader)
+        {
+            // The node section we're skipping to
+            XbfNodeSection nodeSection = NodeSectionTable[reader.Read7BitEncodedInt()];
+
+            if (reader.ReadUInt16() != 0) // TODO: unknown purpose
+                throw new InvalidDataException($"Unexpected value");
+
+            // Get the type of nodes contained in this section
+            int type = reader.Read7BitEncodedInt();
+            switch (type)
+            {
+                case 2: // Style
+                case 8: // 8 seems to be equivalent
+                    ReadStyle(reader, nodeSection);
+                    break;
+
+                case 7: // ResourceDictionary
+                    ReadResourceDictionary(reader, nodeSection, false);
+                    break;
+
+                case 371: // ResourceDictionary
+                    ReadResourceDictionary(reader, nodeSection, true);
+                    break;
+
+                case 5: // Visual states
+                    SkipVisualStateBytes(reader);
+                    ReadNodeSection(reader, nodeSection);
+                    break;
+
+                case 6: // DeferredElement
+                    ReadDeferredElement(reader, nodeSection, true);
+                    break;
+
+                case 746: // DeferredElement
+                    ReadDeferredElement(reader, nodeSection, false);
+                    break;
+
+                default:
+                    throw new InvalidDataException(string.Format("Unknown node type {0} while parsing referenced code section", type));
+            }
+        }
+
+        private void ReadDataTemplate(BinaryReaderEx reader)
+        {
+            string propertyName = GetPropertyName(reader.ReadUInt16()); // Always "Template"
+
+            XbfNodeSection nodeSection = NodeSectionTable[reader.Read7BitEncodedInt()];
+
+            // List of StaticResources and ThemeResources referenced from inside the DataTemplate
+            int staticResourceCount = reader.Read7BitEncodedInt();
+            int themeResourceCount = reader.Read7BitEncodedInt();
+            for (int i = 0; i < staticResourceCount; i++)
+            {
+                string staticResource = StringTable[reader.ReadUInt16()];
+            }
+            for (int i = 0; i < themeResourceCount; i++)
+            {
+                string themeResource = StringTable[reader.ReadUInt16()];
+            }
+
+            ReadNodeSection(reader, nodeSection);
+            
+            // Add the object we found as a property
+            var obj = _objectStack.Pop();
+            _objectStack.Peek().Properties.Add(new XbfObjectProperty(propertyName, obj));
+        }
+
+        private void ReadStyle(BinaryReaderEx reader, XbfNodeSection nodeSection)
+        {
+            int setterCount = reader.Read7BitEncodedInt();
+            for (int i = 0; i < setterCount; i++)
+            {
+                int valueType = reader.ReadByte();
+
+                string propertyName = null;
+                string typeName = null; // Name of type implementing the property, currently ignored
+                object propertyValue = null;
+                int valueOffset = 0;
+
+                switch (valueType)
+                {
+                    case 0x01: // ThemeResource
+                    case 0x02: // StaticResource
+                    case 0x08: // General objects
+                        propertyName = StringTable[reader.ReadUInt16()];
+                        typeName = GetTypeName(reader.ReadUInt16());
+                        valueOffset = reader.Read7BitEncodedInt();
+                        break;
+                    case 0x11: // ThemeResource
+                    case 0x12: // StaticResource
+                    case 0x18: // General objects
+                        propertyName = GetPropertyName(reader.ReadUInt16());
+                        valueOffset = reader.Read7BitEncodedInt();
+                        break;
+                    case 0x20:
+                        propertyName = StringTable[reader.ReadUInt16()];
+                        typeName = GetTypeName(reader.ReadUInt16());
+                        propertyValue = GetPropertyValue(reader);
+                        break;
+                    case 0x30:
+                        propertyName = GetPropertyName(reader.ReadUInt16());
+                        propertyValue = GetPropertyValue(reader);
+                        break;
+                    default:
+                        throw new InvalidDataException("Unexpected value");
+                }
+
+                // General objects can be read directly with ReadObjectInNodeSection
+                if (valueType == 0x08 || valueType == 0x18)
+                    propertyValue = ReadObjectInNodeSection(reader, nodeSection, valueOffset);
+
+                if (propertyValue != null)
+                {
+                    var setter = new XbfObject();
+                    setter.TypeName = "Setter";
+                    setter.Properties.Add(new XbfObjectProperty("Property", propertyName));
+                    setter.Properties.Add(new XbfObjectProperty("Value", propertyValue));
+                    _objectCollectionStack.Peek().Add(setter);
+                }
+                else // StaticResource or ThemeResource need to be read with the Setter already on the stack
+                {
+                    var setter = new XbfObject();
+                    setter.TypeName = "Setter";
+                    setter.Properties.Add(new XbfObjectProperty("Property", propertyName));                    
+                    _objectCollectionStack.Peek().Add(setter);
+
+                    _objectStack.Push(setter);
+                    ReadNodeInNodeSection(reader, nodeSection, valueOffset);
+                    _objectStack.Pop();
                 }
             }
         }
 
-        private void SkipObjectBytes(BinaryReaderEx reader)
+        private void ReadDeferredElement(BinaryReaderEx reader, XbfNodeSection nodeSection, bool extended)
         {
+            string deferredElementName = StringTable[reader.ReadUInt16()];
+
+            if (extended)
+            {
+                // The following properties can be ignored as they will appear in the secondary node section again
+                int count = reader.Read7BitEncodedInt();
+                for (int i = 0; i < count; i++)
+                {
+                    string propertyName = GetPropertyName(reader.ReadUInt16());
+                    object propertyValue = GetPropertyValue(reader);
+                }
+            }
+
+            ReadNodeSection(reader, nodeSection);
+            XbfObject childObj = _objectStack.Pop();
+            XbfObject deferredElement = _objectStack.Peek();
+            deferredElement.Children.Add(childObj);
+        }
+
+        private void ReadNodeSection(BinaryReaderEx reader, XbfNodeSection nodeSection)
+        {
+            // Save the current position and skip ahead to the new position
+            long originalPosition = reader.BaseStream.Position;
+            int newPosition = _firstNodeSectionPosition + nodeSection.NodeOffset;
+            int newEndPosition = _firstNodeSectionPosition + nodeSection.PositionalOffset;
+
+            reader.BaseStream.Position = newPosition;
+
+            // Read the nodes from the specified position
+            ReadNodes(reader, newEndPosition);
+
+            // Return to the original position
+            reader.BaseStream.Position = originalPosition;
+        }
+
+        private XbfObject ReadObjectInNodeSection(BinaryReaderEx reader, XbfNodeSection nodeSection, int offset)
+        {
+            // Save the current position and skip ahead to the new position
+            long originalPosition = reader.BaseStream.Position;
+            int newPosition = _firstNodeSectionPosition + nodeSection.NodeOffset;
+            int newEndPosition = _firstNodeSectionPosition + nodeSection.PositionalOffset;
+
+            reader.BaseStream.Position = newPosition + offset;
+
+            int objectStackDepthBefore = _objectStack.Count;
+            int objectCollectionStackDepthBefore = _objectCollectionStack.Count;
+
+            // Read the node from the specified position
+            ReadNodes(reader, int.MaxValue, true);
+
+            XbfObject obj = _objectStack.Pop();
+
+            if (_objectStack.Count != objectStackDepthBefore)
+                throw new InvalidDataException("_objectStack corrupted");
+            if (_objectCollectionStack.Count != objectCollectionStackDepthBefore)
+                throw new InvalidDataException("_objectCollectionStack corrupted");
+
+            // Return to the original position
+            reader.BaseStream.Position = originalPosition;
+
+            return obj;
+        }
+
+        private void ReadNodeInNodeSection(BinaryReaderEx reader, XbfNodeSection nodeSection, int offset)
+        {
+            // Save the current position and skip ahead to the new position
+            long originalPosition = reader.BaseStream.Position;
+            int newPosition = _firstNodeSectionPosition + nodeSection.NodeOffset;
+            int newEndPosition = _firstNodeSectionPosition + nodeSection.PositionalOffset;
+
+            reader.BaseStream.Position = newPosition + offset;
+
+            int objectStackDepthBefore = _objectStack.Count;
+            int objectCollectionStackDepthBefore = _objectCollectionStack.Count;
+
+            // Read the node from the specified position
+            ReadNodes(reader, int.MaxValue, false, true);
+
+            if (_objectStack.Count != objectStackDepthBefore)
+                throw new InvalidDataException("_objectStack corrupted");
+            if (_objectCollectionStack.Count != objectCollectionStackDepthBefore)
+                throw new InvalidDataException("_objectCollectionStack corrupted");
+
+            // Return to the original position
+            reader.BaseStream.Position = originalPosition;
+        }
+
+        private void ReadResourceDictionary(BinaryReaderEx reader, XbfNodeSection nodeSection, bool extended)
+        {
+            // Resources with keys
+            int resourcesCount = reader.Read7BitEncodedInt();
+            for (int i = 0; i < resourcesCount; i++)
+            {
+                string resourceKey = StringTable[reader.ReadUInt16()]; 
+                int position = reader.Read7BitEncodedInt(); // Secondary node stream offset
+
+                XbfObject obj = ReadObjectInNodeSection(reader, nodeSection, position);
+                obj.Key = resourceKey;
+                _objectCollectionStack.Peek().Add(obj);
+            }
+
+            // A subset of the resource keys from above seem to get repeated here, purpose unknown
             int count = reader.Read7BitEncodedInt();
             for (int i = 0; i < count; i++)
             {
-                int nameID = reader.ReadUInt16(); // Name
-                Debug.Print("Found name: " + StringTable[nameID]);
-                int position = reader.Read7BitEncodedInt(); // Secondary node stream offset
+                string resourceKey = StringTable[reader.ReadUInt16()];
             }
-            reader.ReadByte(); // TODO
-            int x = reader.ReadByte(); // TODO
-            if (x == 1) // TODO
-                reader.ReadBytes(6); // TODO
-            reader.ReadBytes(2); // TODO
+
+            // Styles with TargetType and no key
+            int styleCount = reader.Read7BitEncodedInt();
+            for (int i = 0; i < styleCount; i++)
+            {
+                string targetType = StringTable[reader.ReadUInt16()]; 
+                int position = reader.Read7BitEncodedInt();  // Secondary node stream offset
+
+                XbfObject obj = ReadObjectInNodeSection(reader, nodeSection, position);
+                _objectCollectionStack.Peek().Add(obj);
+            }
+
+            if (extended)
+                if (reader.Read7BitEncodedInt() != 0) // TODO: purpose unknown
+                    throw new InvalidDataException("Unexpected value");
+
+            // A subset of the target types from above seem to get repeated here, purpose unknown
+            int count2 = reader.Read7BitEncodedInt();
+            for (int i = 0; i < count2; i++)
+            {
+                string targetType = StringTable[reader.ReadUInt16()];
+            }
         }
 
         private void SkipVisualStateBytes(BinaryReaderEx reader)
@@ -460,15 +701,15 @@ namespace XbfAnalyzer.Xbf
             // Number of visual states (again?)
             int visualStateCount2 = reader.Read7BitEncodedInt();
             if (visualStateCount != visualStateCount2)
-                throw new Exception("Visual state counts did not match"); // TODO: What does it mean when this happens? Will it ever happen?
-
+                throw new InvalidDataException("Visual state counts did not match"); // TODO: What does it mean when this happens? Will it ever happen?
             // Get the VisualState objects
             var visualStates = new XbfObject[visualStateCount2];
             for (int i = 0; i < visualStateCount2; i++)
             {
                 int nameID = reader.ReadUInt16();
 
-                reader.ReadBytes(2); // TODO
+                reader.Read7BitEncodedInt(); // TODO: purpose unknown
+                reader.Read7BitEncodedInt(); // TODO: purpose unknown
 
                 // Get the Setters for this VisualState
                 int setterCount = reader.Read7BitEncodedInt();
@@ -482,25 +723,26 @@ namespace XbfAnalyzer.Xbf
                 for (int j = 0; j < adaptiveTriggerCount; j++)
                 {
                     // I'm not sure what this second count is for -- possibly for the number of properties set on the trigger
-                    int count2 = reader.Read7BitEncodedInt();
-                    for (int k = 0; k < count2; k++)
-                        reader.Read7BitEncodedInt(); // TODO (probably node stream offsets)
+                    int count = reader.Read7BitEncodedInt();
+                    for (int k = 0; k < count; k++)
+                        reader.Read7BitEncodedInt(); // TODO: purpose unknown
                 }
 
                 // Get the StateTriggers for this VisualState
                 int stateTriggerCount = reader.Read7BitEncodedInt();
                 for (int j = 0; j < stateTriggerCount; j++)
                 {
-                    reader.Read7BitEncodedInt();
+                    int stateTriggerOffset = reader.Read7BitEncodedInt();
                 }
 
-                int count = reader.Read7BitEncodedInt(); // TODO: What is this a count of?
-                for (int j = 0; j < count; j++)
+                int offsetCount = reader.Read7BitEncodedInt(); // Always 0 or 2
+                for (int j = 0; j < offsetCount; j++)
                 {
-                    reader.Read7BitEncodedInt(); // TODO
+                    var offset = reader.Read7BitEncodedInt(); // Secondary node stream offset of StateTriggers and Setters collection
                 }
 
-                reader.ReadByte(); // TODO
+                if (reader.Read7BitEncodedInt() != 0) // TODO: purpose unknown
+                    throw new InvalidDataException("Unexpected value");
 
                 var vs = new XbfObject();
                 vs.TypeName = "VisualState";
@@ -517,7 +759,8 @@ namespace XbfAnalyzer.Xbf
             for (int i = 0; i < visualStateGroupCount; i++)
             {
                 int nameID = reader.ReadUInt16();
-                reader.ReadByte(); // TODO
+
+                reader.Read7BitEncodedInt(); // TODO, always 1 or 2
 
                 // The offset within the node section for this VisualStateGroup
                 int objectOffset = reader.Read7BitEncodedInt();
@@ -539,14 +782,35 @@ namespace XbfAnalyzer.Xbf
                 visualStateGroups[i] = vsg;
             }
 
-            reader.ReadBytes(5); // TODO
+            int visualTransitionCount = reader.Read7BitEncodedInt();
+            for (int i = 0; i < visualTransitionCount; i++)
+            {
+                string toState = StringTable[reader.ReadUInt16()]; 
+                string fromState = StringTable[reader.ReadUInt16()]; 
+                int visualTransitionOffset = reader.Read7BitEncodedInt();
+            }
+
+            reader.Read7BitEncodedInt(); // TODO: always 1 or 2
+
+            int count2 = reader.Read7BitEncodedInt();
+            for (int i = 0; i < count2; i++)
+            {
+                int visualStateIndex1 = reader.Read7BitEncodedInt(); // Visual state index or -1
+                int visualStateIndex2 = reader.Read7BitEncodedInt(); // Visual state index or -1
+                reader.Read7BitEncodedInt();
+            }
+
+            int count3 = reader.Read7BitEncodedInt(); // TODO: unknown purpose
+            for (int i = 0; i < count3; i++)
+                reader.Read7BitEncodedInt();
+
+            reader.Read7BitEncodedInt(); // TODO: unknown purpose
 
             // At the end we have a list of string references
             int stringCount = reader.Read7BitEncodedInt();
             for (int i = 0; i < stringCount; i++)
             {
-                int nameID = reader.ReadUInt16(); // TODO
-                System.Diagnostics.Debug.Print("Found string \"{0}\"", StringTable[nameID]);
+                string str = StringTable[reader.ReadUInt16()];
             }
 
             // At this point we have a list of VisualStateGroup objects in the visualStateGroups variable.
@@ -628,7 +892,7 @@ namespace XbfAnalyzer.Xbf
                         case 0: return "Auto";
                         case 1: return gridLengthValue;
                         case 2: return (gridLengthValue == 1) ? "*" : gridLengthValue + "*";
-                        default: throw new Exception();
+                        default: throw new InvalidDataException("Unexpected value");
                     }
 
                 case 0x08: // Color (or Brush?)
@@ -647,7 +911,7 @@ namespace XbfAnalyzer.Xbf
                     return GetEnumerationValue(enumID, enumValue);
 
                 default:
-                    throw new Exception(string.Format("Unrecognized value type 0x{0:X2}", valueType));
+                    throw new InvalidDataException(string.Format("Unrecognized value type 0x{0:X2}", valueType));
             }
         }
     }

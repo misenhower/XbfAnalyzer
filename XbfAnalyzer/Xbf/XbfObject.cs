@@ -14,8 +14,8 @@ namespace XbfAnalyzer.Xbf
         public string Key { get; set; }
         public int ConnectionID { get; set; }
 
-        private readonly List<XbfObjectProperty> _properties = new List<XbfObjectProperty>();
-        public List<XbfObjectProperty> Properties { get { return _properties; } }
+        public List<XbfObjectProperty> Properties { get; } = new List<XbfObjectProperty>();
+        public XbfObjectCollection Children { get; } = new XbfObjectCollection();
 
         public override string ToString()
         {
@@ -62,7 +62,7 @@ namespace XbfAnalyzer.Xbf
             }
 
             // If we don't have any complex properties or children, just close the object and return it
-            if (complexProperties.Length == 0)
+            if (complexProperties.Length == 0 && Children.Count == 0)
             {
                 sb.Append(" />");
                 return sb.ToString();
@@ -90,6 +90,10 @@ namespace XbfAnalyzer.Xbf
                 sb.AppendFormat(indent + _indent + "</{0}>", propertyName);
                 sb.AppendLine();
             }
+
+            // Children
+            foreach (var child in Children)
+                sb.AppendLine(child.ToString(indentLevel + 1));
 
             // Element closing
             sb.AppendFormat(indent + "</{0}>", TypeName);

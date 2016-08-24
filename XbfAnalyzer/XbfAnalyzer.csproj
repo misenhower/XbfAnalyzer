@@ -58,6 +58,7 @@
     <Compile Include="Xbf\XbfAssembly.cs" />
     <Compile Include="Xbf\XbfFrameworkTypes.cs" />
     <Compile Include="Xbf\XbfHeader.cs" />
+    <Compile Include="Xbf\XbfNodeSection.cs" />
     <Compile Include="Xbf\XbfObject.cs" />
     <Compile Include="Xbf\XbfObjectCollection.cs" />
     <Compile Include="Xbf\XbfObjectProperty.cs" />
