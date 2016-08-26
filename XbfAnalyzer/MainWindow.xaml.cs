@@ -122,21 +122,21 @@ namespace XbfAnalyzer
                     LogHexAddressMessage(i, xbf.XmlNamespaceTable[i]);
                 LogMessage();
 
-                // Node section table
-                LogLine();
-                LogMessage("Node section table:");
-                for (int i = 0; i < xbf.NodeSectionTable.Length; i++)
-                    LogHexAddressMessage(i, "Node offset: {0} (0x{0:X}) Positional offset: {1} (0x{1:X})", xbf.NodeSectionTable[i].NodeOffset, xbf.NodeSectionTable[i].PositionalOffset);
-                LogMessage();
-
-                // Nodes
-                LogLine();
                 if (xbf.Header.MajorFileVersion < 2)
                     LogMessage("Parsing XBF v1 nodes is not currently supported.");
                 else
                 {
+                    // Node section table
+                    LogLine();                
+                    LogMessage("Node section table:");
+                    for (int i = 0; i < xbf.NodeSectionTable.Length; i++)
+                        LogHexAddressMessage(i, "Node offset: {0} (0x{0:X}) Positional offset: {1} (0x{1:X})", xbf.NodeSectionTable[i].NodeOffset, xbf.NodeSectionTable[i].PositionalOffset);
+                    LogMessage();
+
+                    // Nodes
+                    LogLine();
                     string xaml = xbf.RootObject.ToString();
-                    LogMessage("XAML objects:");              
+                    LogMessage("XAML objects:");
                     LogMessage(xaml);
                 }
             }

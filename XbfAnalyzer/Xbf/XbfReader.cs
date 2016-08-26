@@ -36,27 +36,30 @@ namespace XbfAnalyzer.Xbf
                 TypeTable = ReadTable(reader, r => new XbfType(this, r));
                 PropertyTable = ReadTable(reader, r => new XbfProperty(this, r));
                 XmlNamespaceTable = ReadTable(reader, r => StringTable[r.ReadInt32()]);
-                NodeSectionTable = ReadTable(reader, r => new XbfNodeSection(this, reader));
-
-                // Each node section comes in two parts: the nodes themselves come first, followed by line/column data (positional data
-                // which indicates where the objects were located in the source XAML file).
-                // For each node section, there will be two offset numbers: one for the nodes, and one for the positional data.
-                //
-                // There seem to be a few situations that trigger a separate node section to be generated, including:
-                // - Visual state data (VisualStateGroups, VisualStates, etc.) seem to always generate a separate section.
-                //   Some visual state information is included in the primary node stream (after control character 0x0F) but fully-expanded
-                //   objects are only available in the secondary node streams (one per object that has VisualStateGroups defined).
-                // - Resource collections (i.e., groups of objects with x:Key values) seem generate a separate section when they have more than one item.
-                //   Different types of resources seem to generate multiple resource collections for the same object.
-                //   For example, Brush resources are listed separately from Style resources.
-                //
-                // Note that secondary node sections can also contain references to other node sections as well.
-
-                // We are now at the position in the stream of the first actual node data. We'll need this position later.
-                _firstNodeSectionPosition = (int)reader.BaseStream.Position;
 
                 if (Header.MajorFileVersion >= 2)
+                {
+                    // Each node section comes in two parts: the nodes themselves come first, followed by line/column data (positional data
+                    // which indicates where the objects were located in the source XAML file).
+                    // For each node section, there will be two offset numbers: one for the nodes, and one for the positional data.
+                    //
+                    // There seem to be a few situations that trigger a separate node section to be generated, including:
+                    // - Visual state data (VisualStateGroups, VisualStates, etc.) seem to always generate a separate section.
+                    //   Some visual state information is included in the primary node stream (after control character 0x0F) but fully-expanded
+                    //   objects are only available in the secondary node streams (one per object that has VisualStateGroups defined).
+                    // - Resource collections (i.e., groups of objects with x:Key values) seem generate a separate section when they have more than one item.
+                    //   Different types of resources seem to generate multiple resource collections for the same object.
+                    //   For example, Brush resources are listed separately from Style resources.
+                    //
+                    // Note that secondary node sections can also contain references to other node sections as well.
+
+                    // We are now at the position in the stream of the first actual node data. We'll need this position later.
+                    NodeSectionTable = ReadTable(reader, r => new XbfNodeSection(this, reader));
+
+                    _firstNodeSectionPosition = (int)reader.BaseStream.Position;
+
                     RootObject = ReadRootNodeSection(reader);
+                }
             }
         }
 
