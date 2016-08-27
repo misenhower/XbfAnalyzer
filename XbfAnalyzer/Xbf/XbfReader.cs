@@ -412,6 +412,17 @@ namespace XbfAnalyzer.Xbf
                             return; // The root object we just read is the single object we are supposed to read
                         break;
 
+                    case 0x18: // Looks to be equivalent to 0x17 but with an additional constructor argument
+                    case 0x19:
+                        {
+                            string typeName = GetTypeName(reader.ReadUInt16());
+                            object argument = GetPropertyValue(reader);
+                            // I am not aware of any way to specify constructor arguments in UWP XAML but XAML 2009 had an x:Arguments attribute for this, so let's use that instead
+                            _objectStack.Peek().Properties.Add(new XbfObjectProperty("x:Class", typeName));
+                            _objectStack.Peek().Properties.Add(new XbfObjectProperty("x:Arguments", argument));
+                        }
+                        break;
+
                     case 0x8B: // Unknown purpose, only encountered in one file
                         _objectStack.Pop();
                         break;
