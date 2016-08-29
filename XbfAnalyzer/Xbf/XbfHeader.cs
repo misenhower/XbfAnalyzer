@@ -14,7 +14,7 @@ namespace XbfAnalyzer.Xbf
             // Verify magic number
             var magicNumber = reader.ReadBytes(4);
             if (magicNumber[0] != 'X' || magicNumber[1] != 'B' || magicNumber[2] != 'F' || magicNumber[3] != 0)
-                throw new Exception("File does not have XBF header");
+                throw new InvalidDataException("File does not have XBF header");
             MagicNumber = magicNumber;
 
             MetadataSize = reader.ReadUInt32();
